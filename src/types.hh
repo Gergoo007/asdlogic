@@ -22,3 +22,17 @@ typedef signed long i64;
 
 typedef float f32;
 typedef double f64;
+
+#include "imgui/imgui.h"
+
+#include <vector>
+
+struct Selection {
+	bool active; // true amíg a felhasználó húzza/tartja a kijelölést
+	ImVec2 from; // Innen kezdte húzni
+	ImVec2 to; // Ide húzta
+};
+
+extern Selection sel;
+struct Component;
+extern std::vector<Component*> comps;
