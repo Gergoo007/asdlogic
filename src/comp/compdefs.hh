@@ -3,6 +3,8 @@
 #include "../imgui/imgui.h"
 #include "../types.hh"
 
+#include <list>
+
 #define PARAMS ImDrawList* draw_list, ImVec2 pos, ImU32 c
 
 #define noderad ((f32)4)
@@ -34,6 +36,16 @@ enum Comps {
 #undef ADD_COMPTYPE
 #define ADD_COMPTYPE(x) #x,
 
+#define DEFINED_COMPS 7
+
+struct NodeDef {
+	ImVec2 relpos;
+	bool inp;
+
+	NodeDef(ImVec2 _relpos, bool _inp);
+};
+
 extern void (*compdraw[])(PARAMS);
 extern ImVec2 compdims[];
 extern const char* comptypes[];
+extern std::list<NodeDef> compnodes[];

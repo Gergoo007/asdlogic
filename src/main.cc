@@ -149,7 +149,7 @@ int main() {
 			}
 
 			if (windowrightclick && ImGui::BeginPopupContextWindow("item1")) {
-				for (u32 i = 0; i < 7; i++) {
+				for (u32 i = 0; i < DEFINED_COMPS; i++) {
 					if (ImGui::Selectable(comptypes[i])) {
 						comps.push_back(new Component(ImGui::GetMousePos(), (Comps)i));
 					}

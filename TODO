@@ -1,3 +1,4 @@
 - A 'Component' absztrakttá tétele, és külön struct logikai kapuknak, külön struct flip flopoknak stb.
 - 'updated' bit a 'Component' interfészben, ezzel lehet érzékelni oszcillációt (hibás visszacsatolás)
 	(bár ez lehet felesleges ha tugya kezelni a program)
+	(nem tudja)

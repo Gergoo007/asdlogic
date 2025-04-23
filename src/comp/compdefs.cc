@@ -1,4 +1,5 @@
 #include "compdefs.hh"
+#include "comp.hh"
 
 #include <iostream>
 
@@ -57,7 +58,7 @@ void draw_xor(PARAMS) {
 }
 
 void draw_input(PARAMS) {
-	draw_list->AddQuad(pos, ImVec2(pos.x + 50, pos.y), ImVec2(pos.x + 50, pos.y + 50), ImVec2(pos.x, pos.y + 50), white);
+	draw_list->AddQuad(pos, ImVec2(pos.x + 50, pos.y), ImVec2(pos.x + 50, pos.y + 50), ImVec2(pos.x, pos.y + 50), c, th);
 }
 
 void (*compdraw[])(PARAMS) = {
@@ -77,6 +78,17 @@ ImVec2 compdims[] = {
 	/* NOR_GATE  */ ImVec2(gatebasew + ballw + noderad - 1,	gatebaseh), // Hosszabb a kis karika miatt
 	/* XOR_GATE  */ ImVec2(gatebasew, 						gatebaseh),
 	/* XNOR_GATE */ ImVec2(gatebasew + ballw + noderad - 1,	gatebaseh), // Hosszabb a kis karika miatt
+	/* INPUT     */ ImVec2(50,								50),
+};
 
-	/* INPUT     */ ImVec2(50, 50),
+NodeDef::NodeDef(ImVec2 _relpos, bool _inp): relpos(_relpos), inp(_inp) {  }
+
+std::list<NodeDef> compnodes[] = {
+	/* AND_GATE  */ { NodeDef(ImVec2(0, 0.25), true), NodeDef(ImVec2(0, 0.75), true), NodeDef(ImVec2(1.0, 0.50), false), },
+	/* NAND_GATE */ { NodeDef(ImVec2(0, 0.25), true), NodeDef(ImVec2(0, 0.75), true), NodeDef(ImVec2(1.0, 0.50), false), },
+	/* OR_GATE   */ { NodeDef(ImVec2(0, 0.25), true), NodeDef(ImVec2(0, 0.75), true), NodeDef(ImVec2(1.0, 0.50), false), },
+	/* NOR_GATE  */ { NodeDef(ImVec2(0, 0.25), true), NodeDef(ImVec2(0, 0.75), true), NodeDef(ImVec2(1.0, 0.50), false), },
+	/* XOR_GATE  */ { NodeDef(ImVec2(0, 0.25), true), NodeDef(ImVec2(0, 0.75), true), NodeDef(ImVec2(1.0, 0.50), false), },
+	/* XNOR_GATE */ { NodeDef(ImVec2(0, 0.25), true), NodeDef(ImVec2(0, 0.75), true), NodeDef(ImVec2(1.0, 0.50), false), },
+	/* INPUT     */ { NodeDef(ImVec2(1, 0.50), false) },
 };

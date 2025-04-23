@@ -17,7 +17,7 @@ LD ?= ld.gold
 AS ?= gcc
 
 link: $(CPPOBJS) $(CCOBJS)
-	$(CC) $(_CFLAGS) $(CPPOBJS) $(CCOBJS) -o logic123
+	$(CC) $(_CFLAGS) $(CPPOBJS) $(CCOBJS) -o asdlogic
 
 out/%.cc.o: src/%.cc
 	echo "  > $(CC) $^"

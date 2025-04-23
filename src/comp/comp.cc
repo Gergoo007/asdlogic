@@ -4,7 +4,6 @@
 #include "../types.hh"
 #include "comp.hh"
 #include "compdefs.hh"
-#include "input.hh"
 
 static u32 counter;
 Node* selected_node;
@@ -13,8 +12,10 @@ ImU32 ns_colors[4] = {
 	/* [NS_0] = */ IM_COL32(255, 76, 60, 255),
 	/* [NS_1] = */ IM_COL32(0, 255, 255, 255),
 	/* [NS_U] = */ IM_COL32(200, 200, 200, 255),
-	/* [NS_E] = */ IM_COL32(200, 0, 0, 255),
+	/* [NS_E] = */ IM_COL32(255, 0, 0, 255),
 };
+
+static u8 updategen = 0;
 
 static inline void process_node(ImDrawList* draw_list, ImVec2& pos, Node& node) {
 	const ImColor c = node.parent->selected ? red : ns_colors[node.state];
@@ -37,7 +38,21 @@ static inline void process_node(ImDrawList* draw_list, ImVec2& pos, Node& node) 
 
 		// Ez se normális
 		if (std::find(selected_node->connect_to.begin(), selected_node->connect_to.end(), &node) != selected_node->connect_to.end()) {
-			printf("Már van conn\n");
+			printf("Már van conn, törlés\n");
+
+			for (u32 i = 0; i < selected_node->connect_to.size(); i++) {
+				if (selected_node->connect_to[i] == &node)
+					selected_node->connect_to.erase(selected_node->connect_to.begin() + i);
+			}
+
+			for (u32 i = 0; i < node.connect_to.size(); i++) {
+				if (node.connect_to[i] == selected_node)
+					node.connect_to.erase(node.connect_to.begin() + i);
+			}
+
+			selected_node->parent->update(++updategen);
+			node.parent->update(++updategen);
+
 			return;
 		}
 
@@ -45,6 +60,11 @@ static inline void process_node(ImDrawList* draw_list, ImVec2& pos, Node& node) 
 		node.connect_to.push_back(selected_node);
 
 		printf("Conn made (%p <-> %p)\n", selected_node, &node);
+		
+		if (selected_node->parent != node.parent) {
+			selected_node->parent->update(++updategen);
+			node.parent->update(++updategen);
+		}
 	}
 
 	// Összes csatlakozés törlése egy node-on
@@ -52,6 +72,9 @@ static inline void process_node(ImDrawList* draw_list, ImVec2& pos, Node& node) 
 		for (Node* n : node.connect_to) {
 			n->connect_to.erase(std::remove(n->connect_to.begin(), n->connect_to.end(), &node), n->connect_to.end());
 			node.connect_to.erase(std::remove(node.connect_to.begin(), node.connect_to.end(), n), node.connect_to.end());
+			
+			n->parent->update(++updategen);
+			node.parent->update(++updategen);
 		}
 	}
 
@@ -73,11 +96,27 @@ Component::Component(ImVec2 _pos, Comps _type): pos(_pos), type(_type) {
 	sprintf(id, "comp%d", counter);
 	sprintf(context_menu_id, "cm%d", counter);
 	counter++;
+	
+	for (NodeDef& def : compnodes[type]) {
+		if (def.inp) {
+			ins.push_back(Node(ImVec2(compdims[type].x * def.relpos.x, compdims[type].y * def.relpos.y), this, true));
+		} else {
+			outs.push_back(Node(ImVec2(compdims[type].x * def.relpos.x, compdims[type].y * def.relpos.y), this, false));
+		}
+	}
 
-	ins.push_back(Node(ImVec2(0, compdims[type].y * 0.25), this, true));
-	ins.push_back(Node(ImVec2(0, compdims[type].y * 0.75), this, true));
+	// Állapot inicializálása
+	switch (type) {
+		case Comps::INPUT: {
+			state.INPUT.value = 0;
+			break;
+		}
 
-	outs.push_back(Node(ImVec2(compdims[type].x, compdims[type].y * 0.50), this, false));
+		default: break;
+	}
+
+	// Output node-ok inicializálása
+	update(++updategen);
 }
 
 void Component::draw(ImDrawList* draw_list) {
@@ -113,9 +152,8 @@ void Component::draw(ImDrawList* draw_list) {
 
 	if (ImGui::IsItemHovered() && ImGui::IsKeyPressed(ImGuiKey_E)) {
 		if (type == Comps::INPUT) {
-			printf("yo %d %d\n", ((Input*)this)->value, outs[0].state);
-			((Input*)this)->value = !((Input*)this)->value;
-			update();
+			state.INPUT.value = !state.INPUT.value;
+			update(++updategen);
 		}
 	}
 
@@ -124,8 +162,13 @@ void Component::draw(ImDrawList* draw_list) {
 
 Component::~Component() {  }
 
-void Component::update() {
-	printf("frissít %s\n", comptypes[type]);
+void Component::update(u8 upd) {
+	if (updated == upd) {
+		// Már update-elve van, tehát nincs teendő
+		printf("Frissítve van már\n");
+		return;
+	}
+	updated++;
 
 	for (Node& i : ins) {
 		// Input node frissítése, konfliktusok keresése
@@ -149,33 +192,52 @@ void Component::update() {
 	}
 
 	NodeState out;
-	if (type == AND_GATE) {
-		out = NodeState::NS_1;
-
-		for (Node& i : ins) {
-			printf("i.state %d @ %s\n", i.state, comptypes[i.parent->type]);
-			switch (i.state) {
-				case NodeState::NS_E:
-				case NodeState::NS_U: {
-					out = NodeState::NS_U;
-					goto nextupdate;
-				}
-				case NodeState::NS_0: {
-					out = NodeState::NS_0;
-					goto nextupdate;
-				}
-				case NodeState::NS_1:
-					continue;
-			}
-		}
-	} else if (type == INPUT) {
-		if (((Input*)this)->value & 1)
+	bool invert = false;
+	switch (type) {
+		case NAND_GATE:
+			invert = true;
+		case AND_GATE: {
 			out = NodeState::NS_1;
-		else
-			out = NodeState::NS_0;
+
+			for (Node& i : ins) {
+				switch (i.state) {
+					case NodeState::NS_E:
+					case NodeState::NS_U: {
+						out = NodeState::NS_U;
+						goto nextupdate;
+					}
+					case NodeState::NS_0: {
+						out = NodeState::NS_0;
+						goto nextupdate;
+					}
+					case NodeState::NS_1:
+						continue;
+				}
+			}
+			break;
+		}
+
+		case INPUT: {
+			if (state.INPUT.value & 1)
+				out = NodeState::NS_1;
+			else
+				out = NodeState::NS_0;
+			break;
+		}
+
+		default: {
+			printf("Nincs impl: %s\n", comptypes[type]);
+			break;
+		}
 	}
 
 nextupdate:
+	if (invert) {
+		if (out == NodeState::NS_0)
+			out = NodeState::NS_1;
+		else if (out == NodeState::NS_1)
+			out = NodeState::NS_0;
+	}
 	outs[0].state = out;
 
 	// Az outs[0]-n lévő elemek frissítése
@@ -183,11 +245,13 @@ nextupdate:
 		for (Node& n : c->ins) {
 			for (u32 i = 0; i < n.connect_to.size(); i++) {
 				if (n.connect_to[i]->parent == this) {
-					c->update();
+					c->update(upd);
 				}
 			}
 		}
 	}
+
+	updated = true;
 }
 
 Node::Node(ImVec2 _pos, Component* _parent, bool in): pos(_pos), connect_to(0), parent(_parent), input(in) {

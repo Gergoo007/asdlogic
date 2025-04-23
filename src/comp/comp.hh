@@ -58,10 +58,18 @@ struct Component {
 
 	bool selected = false;
 
+	u8 updated = 0;
+
 	Comps type;
 
+	union {
+		struct {
+			bool value;
+		} INPUT;
+	} state;
+
 	void draw(ImDrawList* draw_list);
-	void update();
+	void update(u8 upd);
 
 	Component(ImVec2 pos, Comps _type);
 	~Component();
