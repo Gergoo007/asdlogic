@@ -19,6 +19,12 @@ unix: clean
 windows: clean
 	CC=x86_64-w64-mingw32-g++ CFLAGS='$(WIN64FLAGS)' make link
 
+windows_static: clean
+	CC=x86_64-w64-mingw32-g++ CFLAGS='$(WIN64FLAGS)' make static_link
+	
+static_link: $(CPPOBJS) $(CCOBJS)
+	$(CC) $(CPPOBJS) $(CCOBJS) $(_CFLAGS) -static -o asdlogic_static
+
 link: $(CPPOBJS) $(CCOBJS)
 	$(CC) $(CPPOBJS) $(CCOBJS) $(_CFLAGS) -o asdlogic
 
