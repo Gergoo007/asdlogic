@@ -5,15 +5,16 @@
 
 #include <list>
 
-#define PARAMS ImDrawList* draw_list, ImVec2 pos, ImU32 c
+struct Component;
+#define PARAMS ImDrawList* draw_list, ImVec2 pos, ImU32 c, Component* _comp
 
 #define noderad ((f32)4)
 #define hitbox ((f32)12)
-#define th ((f32)1.2)
 #define wireth ((f32)2)
 #define white IM_COL32(200, 200, 200, 255)
 #define red IM_COL32(200, 0, 0, 255)
 #define ballw ((f32)14) // Inverter karika
+#define linew ((f32)1.2)
 
 #define gatebasew 79
 #define gatebaseh 100

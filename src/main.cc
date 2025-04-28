@@ -1,6 +1,4 @@
-#include <GL/glew.h>
 #include <GLFW/glfw3.h>
-#include <math.h>
 
 #include <iostream>
 #include <string>
@@ -8,8 +6,6 @@
 #include <sstream>
 #include <vector>
 #include <algorithm>
-
-#include <glm/ext.hpp>
 
 #include "colors.hh"
 // #include "comp/and.hh"
@@ -19,12 +15,10 @@
 #include "imgui/imgui_impl_glfw.h"
 #include "imgui/imgui_impl_opengl3.h"
 
-Selection sel;
+#include "util.hh"
 
 #define min(a, b) ((a) > (b) ? (b) : (a))
 #define max(a, b) ((a) < (b) ? (b) : (a))
-
-std::vector<Component*> comps;
 
 int main() {
 	if (!glfwInit())
@@ -49,20 +43,20 @@ int main() {
 	ImGui_ImplGlfw_InitForOpenGL(window, true);
 	ImGui_ImplOpenGL3_Init();
 
-	GLenum err = glewInit();
-	if (GLEW_OK != err) {
-		std::cerr << "GLEW error: " << glewGetErrorString(err) << std::endl;
-		glfwTerminate();
-		return 1;
-	}
+	// GLenum err = glewInit();
+	// if (GLEW_OK != err) {
+	// 	std::cerr << "GLEW error: " << glewGetErrorString(err) << std::endl;
+	// 	glfwTerminate();
+	// 	return 1;
+	// }
 
 	ImFont* font1 = io.Fonts->AddFontFromFileTTF("arial.ttf", 24);
 
 	while (!glfwWindowShouldClose(window)) {
 		double start = glfwGetTime();
 
-		gl(glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT));
-		gl(glClearColor(BG_COLOR, 1));
+		glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+		glClearColor(BG_COLOR, 1);
 
 		ImGui_ImplOpenGL3_NewFrame();
 		ImGui_ImplGlfw_NewFrame();
@@ -98,7 +92,9 @@ int main() {
 			ImDrawList* draw_list = ImGui::GetWindowDrawList();
 			for (u32 i = 0; i < comps.size(); i++) {
 				auto& c = comps[i];
+				ImGui::SetWindowFontScale(view.zoom);
 				c->draw(draw_list);
+				ImGui::SetWindowFontScale(1);
 				if (ImGui::BeginPopupContextItem(c->context_menu_id)) {
 					windowrightclick = false;
 					if (ImGui::Selectable("ok 123")) {
@@ -124,8 +120,8 @@ int main() {
 			if (sel.active) {
 				for (Component* c : comps) {
 					if (
-						std::clamp(c->pos.x, min(sel.from.x, sel.to.x), max(sel.from.x, sel.to.x)) == c->pos.x &&
-						std::clamp(c->pos.y, min(sel.from.y, sel.to.y), max(sel.from.y, sel.to.y)) == c->pos.y
+						std::clamp(zoomx(c->pos.x + view.panpos.x), min(sel.from.x, sel.to.x), max(sel.from.x, sel.to.x)) == (zoomx(c->pos.x + view.panpos.x)) &&
+						std::clamp(zoomy(c->pos.y + view.panpos.y), min(sel.from.y, sel.to.y), max(sel.from.y, sel.to.y)) == (zoomy(c->pos.y + view.panpos.y))
 					)
 						c->selected = true;
 					else
@@ -151,11 +147,21 @@ int main() {
 			if (windowrightclick && ImGui::BeginPopupContextWindow("item1")) {
 				for (u32 i = 0; i < DEFINED_COMPS; i++) {
 					if (ImGui::Selectable(comptypes[i])) {
-						comps.push_back(new Component(ImGui::GetMousePos(), (Comps)i));
+						comps.push_back(new Component(unzoom(ImGui::GetMousePos()), (Comps)i));
 					}
 				}
 				ImGui::EndPopup();
 			}
+
+			if (ImGui::IsMouseDragging(ImGuiMouseButton_Middle)) {
+				view.panpos += io.MouseDelta / view.zoom;
+			}
+
+			if (ImGui::IsKeyDown(ImGuiKey_LeftCtrl)) {
+				view.zoom += io.MouseWheel / 20.f * view.zoom;
+			}
+
+			// ImGui::SetWindowFontScale(1);
 
 			if (ImGui::BeginMenuBar()) {
 				ImGui::MenuItem("asd");
@@ -185,15 +191,4 @@ int main() {
 	ImGui::DestroyContext();
 
 	glfwTerminate();
-}
-
-void ogl_print_errors(char const* const fun, char const* const file, int const line) {
-	GLenum e = glGetError();
-	if (e != GL_NO_ERROR) {
-		char* estr = (char*)gluErrorString(e);
-		if (estr)
-			fprintf(stderr, "OpenGL error @ %s:%d (%s): '%s'\n", file, line, fun, estr);
-		else
-			fprintf(stderr, "OpenGL error @ %s:%d (%s): '%d'\n", file, line, fun, e);
-	}
 }

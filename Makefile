@@ -9,23 +9,26 @@ CCOBJS := $(patsubst %.cc,out/%.cc.o,$(CCSRCS))
 CPPSRCS += $(subst src/,,$(call rwildcard,src,*.cpp))
 CPPOBJS += $(patsubst %.cpp,out/%.cpp.o,$(CPPSRCS))
 
-_CFLAGS := $(CFLAGS) -std=gnu++23 -Wshadow -O0 -g -Wno-multichar \
-	$(shell pkg-config --libs --cflags gl glew glfw3 freetype2)
+LINUXFLAGS := $(shell pkg-config --libs --cflags gl glfw3)
+WIN64FLAGS := -lopengl32 $(shell x86_64-w64-mingw32-pkg-config --libs --cflags glfw3) -lgdi32
+_CFLAGS := $(CFLAGS) -std=gnu++23 -Wshadow -O0 -g -Wno-multichar
 
-CC := g++
-LD ?= ld.gold
-AS ?= gcc
+unix: clean
+	CC=g++ CFLAGS='$(LINUXFLAGS)' make link
+
+windows: clean
+	CC=x86_64-w64-mingw32-g++ CFLAGS='$(WIN64FLAGS)' make link
 
 link: $(CPPOBJS) $(CCOBJS)
-	$(CC) $(_CFLAGS) $(CPPOBJS) $(CCOBJS) -o asdlogic
+	$(CC) $(CPPOBJS) $(CCOBJS) $(_CFLAGS) -o asdlogic
 
 out/%.cc.o: src/%.cc
 	echo "  > $(CC) $^"
-	$(CC) $(_CFLAGS) -c $^ -o $@
+	$(CC) -c $^ $(_CFLAGS) -o $@
 
 out/%.cpp.o: src/%.cpp
 	echo "  > $(CC) $^"
-	$(CC) $(_CFLAGS) -c $^ -o $@
+	$(CC) -c $^ $(_CFLAGS) -o $@
 
 clean:
 	rm -rf out/*

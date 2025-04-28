@@ -1,15 +1,5 @@
 #pragma once
 
-// Definition in main.c
-void ogl_print_errors(char const* const fun, char const* const file, int const line);
-
-#define _DEBUG
-#ifdef _DEBUG
-#define gl(x) { ogl_print_errors("before "#x, __FILE__, __LINE__); (x); ogl_print_errors(#x, __FILE__, __LINE__); }
-#else
-#define gl(x) (x)
-#endif
-
 typedef unsigned char u8;
 typedef unsigned short u16;
 typedef unsigned int u32;
@@ -22,17 +12,3 @@ typedef signed long i64;
 
 typedef float f32;
 typedef double f64;
-
-#include "imgui/imgui.h"
-
-#include <vector>
-
-struct Selection {
-	bool active; // true amíg a felhasználó húzza/tartja a kijelölést
-	ImVec2 from; // Innen kezdte húzni
-	ImVec2 to; // Ide húzta
-};
-
-extern Selection sel;
-struct Component;
-extern std::vector<Component*> comps;

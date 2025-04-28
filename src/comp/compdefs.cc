@@ -3,42 +3,69 @@
 
 #include <iostream>
 
+#include "../imgui/imgui_internal.h"
+
+#include "../util.hh"
+
+// Via https://github.com/phicore/ImGuiStylingTricks
+void CenteredText(const char* label, const ImVec2& size_arg) {
+	ImGuiWindow* window = ImGui::GetCurrentWindow();
+	
+	ImGuiContext& g = *GImGui;
+	const ImGuiStyle& style = g.Style;
+	const ImGuiID id = window->GetID(label);
+	const ImVec2 label_size = ImGui::CalcTextSize(label, NULL, true);
+
+	ImVec2 pos = window->DC.CursorPos;
+	ImVec2 size = ImGui::CalcItemSize(size_arg, label_size.x + style.FramePadding.x * 2.0f, label_size.y + style.FramePadding.y * 2.0f);
+
+	const ImVec2 pos2 = ImVec2((pos.x + size.x), (pos.y + size.y));
+	const ImRect bb(pos, pos2);
+
+	ImGui::ItemSize(size, style.FramePadding.y);
+
+	const ImVec2 pos_min = ImVec2((bb.Min.x + style.FramePadding.x), (bb.Min.y + style.FramePadding.y));
+	const ImVec2 pos_max = ImVec2((bb.Max.x - style.FramePadding.x), (bb.Max.y - style.FramePadding.y));
+
+	ImGui::RenderTextClipped(pos_min, pos_max, label, NULL, &label_size, style.ButtonTextAlign, &bb);
+}
+
 const char* comptypes[] = {
 	COMPTYPELIST
 };
 
 void draw_and(PARAMS) {
 	draw_list->AddBezierCubic(
-		ImVec2(pos.x + 20, pos.y + 0.5),
-		ImVec2(pos.x + 100, pos.y + 0.5),
-		ImVec2(pos.x + 100, pos.y + 0.5 + 100),
-		ImVec2(pos.x + 20, pos.y + 0.5 + 100),
+		zoom(ImVec2(pos.x + 20, pos.y + 0.5)),
+		zoom(ImVec2(pos.x + 100, pos.y + 0.5)),
+		zoom(ImVec2(pos.x + 100, pos.y + 0.5 + 100)),
+		zoom(ImVec2(pos.x + 20, pos.y + 0.5 + 100)),
 		c,
-		th + 0.2
+		linew + 0.2
 	);
 	draw_list->AddLine(
-		ImVec2(pos.x, pos.y),
-		ImVec2(pos.x + 20, pos.y),
+		zoom(ImVec2(pos.x, pos.y)),
+		zoom(ImVec2(pos.x + 20, pos.y)),
 		c,
-		th
+		linew
 	);
 	draw_list->AddLine(
-		ImVec2(pos.x, pos.y + 100),
-		ImVec2(pos.x + 20, pos.y + 100),
+		zoom(ImVec2(pos.x, pos.y + 100)),
+		zoom(ImVec2(pos.x + 20, pos.y + 100)),
 		c,
-		th
+		linew
 	);
 	draw_list->AddLine(
-		ImVec2(pos.x, pos.y),
-		ImVec2(pos.x, pos.y + 100),
+		zoom(ImVec2(pos.x, pos.y)),
+		zoom(ImVec2(pos.x, pos.y + 100)),
 		c,
-		th
+		linew
 	);
 }
 
 void draw_nand(PARAMS) {
-	draw_and(draw_list, pos, c);
-	draw_list->AddCircle(ImVec2(pos.x + 79 + 7, pos.y + 50), ballw / 2, c, 0, th);
+	draw_and(draw_list, pos, c, _comp);
+	draw_list->AddCircle(ImVec2(pos.x + 79 + 7, pos.y + 50) * view.zoom, ballw / 2 * view.zoom, c, 0, linew);
 }
 
 void draw_nor(PARAMS) {
@@ -58,7 +85,9 @@ void draw_xor(PARAMS) {
 }
 
 void draw_input(PARAMS) {
-	draw_list->AddQuad(pos, ImVec2(pos.x + 50, pos.y), ImVec2(pos.x + 50, pos.y + 50), ImVec2(pos.x, pos.y + 50), c, th);
+	draw_list->AddQuad(zoom(pos), zoom(ImVec2(pos.x + 50, pos.y)), zoom(ImVec2(pos.x + 50, pos.y + 50)), zoom(ImVec2(pos.x, pos.y + 50)), c, linew);
+	ImGui::SetCursorPos(zoom(ImVec2(pos.x, pos.y)));
+	CenteredText(_comp->state.INPUT.value ? "1" : "0", ImVec2(50, 50) * view.zoom);
 }
 
 void (*compdraw[])(PARAMS) = {

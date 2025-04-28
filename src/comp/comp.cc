@@ -2,6 +2,7 @@
 #include <algorithm>
 
 #include "../types.hh"
+#include "../util.hh"
 #include "comp.hh"
 #include "compdefs.hh"
 
@@ -17,16 +18,15 @@ ImU32 ns_colors[4] = {
 
 static u8 updategen = 0;
 
-static inline void process_node(ImDrawList* draw_list, ImVec2& pos, Node& node) {
+static inline void process_node(ImDrawList* draw_list, ImVec2 pos, Node& node) {
 	const ImColor c = node.parent->selected ? red : ns_colors[node.state];
 
-	draw_list->AddCircleFilled(ImVec2(pos.x + node.pos.x + th/2, pos.y + node.pos.y), noderad, c);
-	ImGui::SetCursorPos(ImVec2(pos.x + node.pos.x - hitbox/2, pos.y + node.pos.y - hitbox/2));
-	ImGui::InvisibleButton(node.id, ImVec2(hitbox, hitbox));
-	ImGui::GetItemRectMax();
+	draw_list->AddCircleFilled(zoom(ImVec2(pos.x + node.pos.x + linew/2, pos.y + node.pos.y)), noderad * view.zoom, c);
+	ImGui::SetCursorPos(zoom(ImVec2(pos.x + node.pos.x - hitbox/2, pos.y + node.pos.y - hitbox/2)));
+	ImGui::InvisibleButton(node.id, ImVec2(hitbox, hitbox) * view.zoom);
 
 	if (ImGui::IsItemActive()) {
-		draw_list->AddLine(ImVec2(pos.x + node.pos.x + th/2, pos.y + node.pos.y), ImGui::GetMousePos(), ns_colors[node.state], wireth);
+		draw_list->AddLine(zoom(ImVec2(pos.x + node.pos.x + linew/2, pos.y + node.pos.y)), ImGui::GetMousePos(), ns_colors[node.state], wireth);
 		selected_node = &node;
 	}
 
@@ -82,8 +82,8 @@ static inline void process_node(ImDrawList* draw_list, ImVec2& pos, Node& node) 
 		if (node.connect_to.size()) {
 			for (Node* node2 : node.connect_to) {
 				draw_list->AddLine(
-					ImVec2(pos.x + node.pos.x + th/2, pos.y + node.pos.y),
-					ImVec2(node2->parent->pos.x + node2->pos.x + th/2, node2->parent->pos.y + node2->pos.y),
+					zoom(ImVec2(pos.x + node.pos.x + linew/2, pos.y + node.pos.y)),
+					zoom(transform(ImVec2(node2->parent->pos.x + node2->pos.x + linew/2, node2->parent->pos.y + node2->pos.y))),
 					ns_colors[node.state],
 					wireth
 				);
@@ -99,9 +99,9 @@ Component::Component(ImVec2 _pos, Comps _type): pos(_pos), type(_type) {
 	
 	for (NodeDef& def : compnodes[type]) {
 		if (def.inp) {
-			ins.push_back(Node(ImVec2(compdims[type].x * def.relpos.x, compdims[type].y * def.relpos.y), this, true));
+			ins.push_back(Node(compdims[type] * def.relpos, this, true));
 		} else {
-			outs.push_back(Node(ImVec2(compdims[type].x * def.relpos.x, compdims[type].y * def.relpos.y), this, false));
+			outs.push_back(Node(compdims[type] * def.relpos, this, false));
 		}
 	}
 
@@ -121,17 +121,17 @@ Component::Component(ImVec2 _pos, Comps _type): pos(_pos), type(_type) {
 
 void Component::draw(ImDrawList* draw_list) {
 	for (Node& node : ins) {
-		process_node(draw_list, pos, node);
+		process_node(draw_list, transform(pos), node);
 	}
 
 	for (Node& node : outs) {
-		process_node(draw_list, pos, node);
+		process_node(draw_list, transform(pos), node);
 	}
 
 	const ImColor c = selected ? red : white;
 
-	ImGui::SetCursorPos(pos);
-	ImGui::InvisibleButton(id, compdims[type]);
+	ImGui::SetCursorPos(zoom(transform(pos)));
+	ImGui::InvisibleButton(id, compdims[type] * view.zoom);
 	if (ImGui::IsItemActive()) {
 		// Ha van kijelölés akkor az
 		// összes jelölt komponens (benne van ez is)
@@ -140,13 +140,11 @@ void Component::draw(ImDrawList* draw_list) {
 		for (Component* c : comps) {
 			if (c->selected) {
 				sel = true;
-				c->pos.x += ImGui::GetIO().MouseDelta.x;
-				c->pos.y += ImGui::GetIO().MouseDelta.y;
+				c->pos += ImGui::GetIO().MouseDelta / view.zoom;
 			}
 		}
 		if (!sel) {
-			pos.x += ImGui::GetIO().MouseDelta.x;
-			pos.y += ImGui::GetIO().MouseDelta.y;
+			pos += ImGui::GetIO().MouseDelta / view.zoom;
 		}
 	}
 
@@ -157,7 +155,7 @@ void Component::draw(ImDrawList* draw_list) {
 		}
 	}
 
-	(compdraw[type])(draw_list, pos, c);
+	(compdraw[type])(draw_list, transform(pos), c, this);
 }
 
 Component::~Component() {  }
@@ -208,7 +206,7 @@ void Component::update(u8 upd) {
 					}
 					case NodeState::NS_0: {
 						out = NodeState::NS_0;
-						goto nextupdate;
+						continue;
 					}
 					case NodeState::NS_1:
 						continue;
