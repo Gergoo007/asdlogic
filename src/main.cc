@@ -7,15 +7,15 @@
 #include <vector>
 #include <algorithm>
 
-#include "colors.hh"
-// #include "comp/and.hh"
-#include "comp/comp.hh"
+#include <colors.hh>
+#include <comp/comp.hh>
+#include <canvas.hh>
 
-#include "imgui/imgui.h"
-#include "imgui/imgui_impl_glfw.h"
-#include "imgui/imgui_impl_opengl3.h"
+#include <imgui/imgui.h>
+#include <imgui/imgui_impl_glfw.h>
+#include <imgui/imgui_impl_opengl3.h>
 
-#include "util.hh"
+#include <util.hh>
 
 #define min(a, b) ((a) > (b) ? (b) : (a))
 #define max(a, b) ((a) < (b) ? (b) : (a))
@@ -43,14 +43,7 @@ int main() {
 	ImGui_ImplGlfw_InitForOpenGL(window, true);
 	ImGui_ImplOpenGL3_Init();
 
-	// GLenum err = glewInit();
-	// if (GLEW_OK != err) {
-	// 	std::cerr << "GLEW error: " << glewGetErrorString(err) << std::endl;
-	// 	glfwTerminate();
-	// 	return 1;
-	// }
-
-	ImFont* font1 = io.Fonts->AddFontFromFileTTF("arial.ttf", 24);
+	ImFont* font1 = io.Fonts->AddFontFromFileTTF("arial.ttf", 20);
 
 	while (!glfwWindowShouldClose(window)) {
 		double start = glfwGetTime();
@@ -92,7 +85,7 @@ int main() {
 			ImDrawList* draw_list = ImGui::GetWindowDrawList();
 			for (u32 i = 0; i < comps.size(); i++) {
 				auto& c = comps[i];
-				ImGui::SetWindowFontScale(view.zoom);
+				ImGui::SetWindowFontScale(maincanvas.zoom);
 				c->draw(draw_list);
 				ImGui::SetWindowFontScale(1);
 				if (ImGui::BeginPopupContextItem(c->context_menu_id)) {
@@ -112,6 +105,8 @@ int main() {
 				}
 			}
 
+			maincanvas.drawGrid(draw_list);
+
 			// Kijelölő téglalap
 			if (sel.active)
 				draw_list->AddRectFilled(sel.from, sel.to, 0x80808080);
@@ -120,8 +115,8 @@ int main() {
 			if (sel.active) {
 				for (Component* c : comps) {
 					if (
-						std::clamp(zoomx(c->pos.x + view.panpos.x), min(sel.from.x, sel.to.x), max(sel.from.x, sel.to.x)) == (zoomx(c->pos.x + view.panpos.x)) &&
-						std::clamp(zoomy(c->pos.y + view.panpos.y), min(sel.from.y, sel.to.y), max(sel.from.y, sel.to.y)) == (zoomy(c->pos.y + view.panpos.y))
+						std::clamp(maincanvas.zoomx(c->pos.x + maincanvas.panpos.x), min(sel.from.x, sel.to.x), max(sel.from.x, sel.to.x)) == (maincanvas.zoomx(c->pos.x + maincanvas.panpos.x)) &&
+						std::clamp(maincanvas.zoomy(c->pos.y + maincanvas.panpos.y), min(sel.from.y, sel.to.y), max(sel.from.y, sel.to.y)) == (maincanvas.zoomy(c->pos.y + maincanvas.panpos.y))
 					)
 						c->selected = true;
 					else
@@ -136,7 +131,6 @@ int main() {
 					if (!comps[i]->selected) continue;
 
 					delete comps[i];
-
 					// ezt is ki a faszom találta ki?
 					std::vector<Component*>::iterator it = comps.begin();
 					std::advance(it, i);
@@ -144,21 +138,35 @@ int main() {
 				}
 			}
 
+			// Vágólap műveletek
+			if (ImGui::IsKeyDown(ImGuiKey_LeftCtrl)) {
+				if (ImGui::IsKeyReleased(ImGuiKey_C)) {
+					clipboard.copy();
+				} else if (ImGui::IsKeyReleased(ImGuiKey_X)) {
+					clipboard.cut();
+				} else if (ImGui::IsKeyReleased(ImGuiKey_V)) {
+					clipboard.paste();
+				} else if (ImGui::IsKeyReleased(ImGuiKey_D)) {
+					clipboard.copy();
+					clipboard.paste();
+				}
+			}
+
 			if (windowrightclick && ImGui::BeginPopupContextWindow("item1")) {
 				for (u32 i = 0; i < DEFINED_COMPS; i++) {
 					if (ImGui::Selectable(comptypes[i])) {
-						comps.push_back(new Component(unzoom(ImGui::GetMousePos()), (Comps)i));
+						comps.push_back(new Component(maincanvas.unzoom(ImGui::GetMousePos() - maincanvas.panpos), (Comps)i));
 					}
 				}
 				ImGui::EndPopup();
 			}
 
 			if (ImGui::IsMouseDragging(ImGuiMouseButton_Middle)) {
-				view.panpos += io.MouseDelta / view.zoom;
+				maincanvas.panpos += io.MouseDelta / maincanvas.zoom;
 			}
 
 			if (ImGui::IsKeyDown(ImGuiKey_LeftCtrl)) {
-				view.zoom += io.MouseWheel / 20.f * view.zoom;
+				maincanvas.zoom += io.MouseWheel / 20.f * maincanvas.zoom;
 			}
 
 			// ImGui::SetWindowFontScale(1);

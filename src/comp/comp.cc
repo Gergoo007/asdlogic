@@ -1,8 +1,9 @@
 #include <iostream>
 #include <algorithm>
 
-#include "../types.hh"
-#include "../util.hh"
+#include <types.hh>
+#include <util.hh>
+#include <canvas.hh>
 #include "comp.hh"
 #include "compdefs.hh"
 
@@ -21,12 +22,12 @@ static u8 updategen = 0;
 static inline void process_node(ImDrawList* draw_list, ImVec2 pos, Node& node) {
 	const ImColor c = node.parent->selected ? red : ns_colors[node.state];
 
-	draw_list->AddCircleFilled(zoom(ImVec2(pos.x + node.pos.x + linew/2, pos.y + node.pos.y)), noderad * view.zoom, c);
-	ImGui::SetCursorPos(zoom(ImVec2(pos.x + node.pos.x - hitbox/2, pos.y + node.pos.y - hitbox/2)));
-	ImGui::InvisibleButton(node.id, ImVec2(hitbox, hitbox) * view.zoom);
+	draw_list->AddCircleFilled(maincanvas.zoomfun(ImVec2(pos.x + node.pos.x + linew/2, pos.y + node.pos.y)), noderad * maincanvas.zoom, c);
+	ImGui::SetCursorPos(maincanvas.zoomfun(ImVec2(pos.x + node.pos.x - hitbox/2, pos.y + node.pos.y - hitbox/2)));
+	ImGui::InvisibleButton(node.id, ImVec2(hitbox, hitbox) * maincanvas.zoom);
 
 	if (ImGui::IsItemActive()) {
-		draw_list->AddLine(zoom(ImVec2(pos.x + node.pos.x + linew/2, pos.y + node.pos.y)), ImGui::GetMousePos(), ns_colors[node.state], wireth);
+		draw_list->AddLine(maincanvas.zoomfun(ImVec2(pos.x + node.pos.x + linew/2, pos.y + node.pos.y)), ImGui::GetMousePos(), ns_colors[node.state], wireth);
 		selected_node = &node;
 	}
 
@@ -82,8 +83,8 @@ static inline void process_node(ImDrawList* draw_list, ImVec2 pos, Node& node) {
 		if (node.connect_to.size()) {
 			for (Node* node2 : node.connect_to) {
 				draw_list->AddLine(
-					zoom(ImVec2(pos.x + node.pos.x + linew/2, pos.y + node.pos.y)),
-					zoom(transform(ImVec2(node2->parent->pos.x + node2->pos.x + linew/2, node2->parent->pos.y + node2->pos.y))),
+					maincanvas.zoomfun(ImVec2(pos.x + node.pos.x + linew/2, pos.y + node.pos.y)),
+					maincanvas.zoomfun(maincanvas.transform(ImVec2(node2->parent->pos.x + node2->pos.x + linew/2, node2->parent->pos.y + node2->pos.y))),
 					ns_colors[node.state],
 					wireth
 				);
@@ -93,10 +94,8 @@ static inline void process_node(ImDrawList* draw_list, ImVec2 pos, Node& node) {
 }
 
 Component::Component(ImVec2 _pos, Comps _type): pos(_pos), type(_type) {
-	sprintf(id, "comp%d", counter);
-	sprintf(context_menu_id, "cm%d", counter);
-	counter++;
-	
+	gen_ids(false);
+
 	for (NodeDef& def : compnodes[type]) {
 		if (def.inp) {
 			ins.push_back(Node(compdims[type] * def.relpos, this, true));
@@ -121,17 +120,17 @@ Component::Component(ImVec2 _pos, Comps _type): pos(_pos), type(_type) {
 
 void Component::draw(ImDrawList* draw_list) {
 	for (Node& node : ins) {
-		process_node(draw_list, transform(pos), node);
+		process_node(draw_list, maincanvas.transform(pos), node);
 	}
 
 	for (Node& node : outs) {
-		process_node(draw_list, transform(pos), node);
+		process_node(draw_list, maincanvas.transform(pos), node);
 	}
 
 	const ImColor c = selected ? red : white;
 
-	ImGui::SetCursorPos(zoom(transform(pos)));
-	ImGui::InvisibleButton(id, compdims[type] * view.zoom);
+	ImGui::SetCursorPos(maincanvas.zoomfun(maincanvas.transform(pos)));
+	ImGui::InvisibleButton(id, compdims[type] * maincanvas.zoom);
 	if (ImGui::IsItemActive()) {
 		// Ha van kijelölés akkor az
 		// összes jelölt komponens (benne van ez is)
@@ -140,11 +139,11 @@ void Component::draw(ImDrawList* draw_list) {
 		for (Component* c : comps) {
 			if (c->selected) {
 				sel = true;
-				c->pos += ImGui::GetIO().MouseDelta / view.zoom;
+				c->pos += ImGui::GetIO().MouseDelta / maincanvas.zoom;
 			}
 		}
 		if (!sel) {
-			pos += ImGui::GetIO().MouseDelta / view.zoom;
+			pos += ImGui::GetIO().MouseDelta / maincanvas.zoom;
 		}
 	}
 
@@ -155,7 +154,7 @@ void Component::draw(ImDrawList* draw_list) {
 		}
 	}
 
-	(compdraw[type])(draw_list, transform(pos), c, this);
+	(compdraw[type])(draw_list, maincanvas.transform(pos), c, this);
 }
 
 Component::~Component() {  }
@@ -250,6 +249,24 @@ nextupdate:
 	}
 
 	updated = true;
+}
+
+void Component::gen_ids(bool regen_nodes) {
+	sprintf(id, "comp%d", counter);
+	sprintf(context_menu_id, "cm%d", counter);
+	counter++;
+
+	if (regen_nodes) {
+		for (Node& n : ins) {
+			sprintf(n.id, "n%d", counter);
+			counter++;
+		}
+
+		for (Node& n : outs) {
+			sprintf(n.id, "n%d", counter);
+			counter++;
+		}
+	}
 }
 
 Node::Node(ImVec2 _pos, Component* _parent, bool in): pos(_pos), connect_to(0), parent(_parent), input(in) {

@@ -1,7 +1,7 @@
 #pragma once
 
-#include "imgui/imgui.h"
-#include "types.hh"
+#include <imgui/imgui.h>
+#include <types.hh>
 #include <vector>
 
 struct Selection {
@@ -20,10 +20,18 @@ extern Selection sel;
 struct Component;
 extern std::vector<Component*> comps;
 
-extern View view;
+// Via https://github.com/phicore/ImGuiStylingTricks
+void CenteredText(const char* label, const ImVec2& size_arg);
 
-ImVec2 transform(ImVec2 in);
-ImVec2 zoom(ImVec2 original);
-f32 zoomx(f32 original);
-f32 zoomy(f32 original);
-ImVec2 unzoom(ImVec2 original);
+struct Clipboard {
+	private:
+	std::vector<Component*> clipboard;
+
+	public:
+	ImVec2 copymousepos;
+	void copy();
+	void paste();
+	void cut();
+};
+
+extern Clipboard clipboard;

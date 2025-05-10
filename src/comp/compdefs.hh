@@ -1,7 +1,7 @@
 #pragma once
 
-#include "../imgui/imgui.h"
-#include "../types.hh"
+#include <imgui/imgui.h>
+#include <types.hh>
 
 #include <list>
 
