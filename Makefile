@@ -11,7 +11,7 @@ CPPSRCS += $(subst src/,,$(call rwildcard,src,*.cpp))
 CPPOBJS += $(patsubst %.cpp,out/%.cpp.o,$(CPPSRCS))
 CPPDEPENDS += $(patsubst %.cpp,out/%.cpp.d,$(CPPSRCS))
 
-LINUXFLAGS := $(shell pkg-config --libs --cflags gl glfw3)
+LINUXFLAGS := $(shell pkg-config --libs --cflags gl glfw3 vulkan)
 WIN64FLAGS := -lopengl32 $(shell x86_64-w64-mingw32-pkg-config --libs --cflags glfw3) -lgdi32
 _CFLAGS := $(CFLAGS) -std=gnu++23 -Wshadow -O0 -g -Wno-multichar -Isrc -MMD -MP
 

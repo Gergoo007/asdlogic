@@ -1,9 +1,11 @@
 #include <iostream>
 #include <algorithm>
+#include <cmath>
 
 #include <types.hh>
 #include <util.hh>
 #include <canvas.hh>
+#include <config.hh>
 #include "comp.hh"
 #include "compdefs.hh"
 
@@ -23,12 +25,13 @@ static inline void process_node(ImDrawList* draw_list, ImVec2 pos, Node& node) {
 	const ImColor c = node.parent->selected ? red : ns_colors[node.state];
 
 	draw_list->AddCircleFilled(mc.convert(pos + node.pos), noderad * mc.zoom, c);
-	printf("trui %f %f\n", pos.x + node.pos.x, mc.convert(ImVec2(pos.x + node.pos.x, 0)).x);
-	ImGui::SetCursorPos(mc.convert(pos + node.pos));
-	ImGui::InvisibleButton(node.id, ImVec2(hitbox, hitbox) * mc.zoom);
+	// printf("trui %f %f\n", pos.x + node.pos.x, mc.convert(ImVec2(pos.x + node.pos.x, 0)).x);
+	const ImVec2 hb = ImVec2(hitbox, hitbox) * mc.zoom;
+	ImGui::SetCursorPos(mc.convert(pos + node.pos) - hb / 2);
+	ImGui::InvisibleButton(node.id, hb);
 
 	if (ImGui::IsItemActive()) {
-		draw_list->AddLine(mc.zoomfun(ImVec2(pos.x + node.pos.x + linew/2, pos.y + node.pos.y)), ImGui::GetMousePos(), ns_colors[node.state], wireth);
+		draw_list->AddLine(mc.convert(pos + node.pos), ImGui::GetMousePos(), ns_colors[node.state], wireth);
 		selected_node = &node;
 	}
 
@@ -84,8 +87,8 @@ static inline void process_node(ImDrawList* draw_list, ImVec2 pos, Node& node) {
 		if (node.connect_to.size()) {
 			for (Node* node2 : node.connect_to) {
 				draw_list->AddLine(
-					mc.zoomfun(ImVec2(pos.x + node.pos.x + linew/2, pos.y + node.pos.y)),
-					mc.zoomfun(mc.transform(ImVec2(node2->parent->pos.x + node2->pos.x + linew/2, node2->parent->pos.y + node2->pos.y))),
+					mc.convert(pos + node.pos),
+					mc.convert(node2->parent->pos + node2->pos),
 					ns_colors[node.state],
 					wireth
 				);
@@ -99,9 +102,9 @@ Component::Component(ImVec2 _pos, Comps _type): pos(_pos), type(_type) {
 
 	for (NodeDef& def : compnodes[type]) {
 		if (def.inp) {
-			ins.push_back(Node(compdims[type] * def.relpos, this, true));
+			ins.push_back(Node(def.relpos, this, true));
 		} else {
-			outs.push_back(Node(compdims[type] * def.relpos, this, false));
+			outs.push_back(Node(def.relpos, this, false));
 		}
 	}
 
@@ -121,30 +124,37 @@ Component::Component(ImVec2 _pos, Comps _type): pos(_pos), type(_type) {
 
 void Component::draw(ImDrawList* draw_list) {
 	for (Node& node : ins) {
-		process_node(draw_list, mc.transform(pos), node);
+		process_node(draw_list, pos, node);
 	}
 
 	for (Node& node : outs) {
-		process_node(draw_list, mc.transform(pos), node);
+		process_node(draw_list, pos, node);
 	}
 
 	const ImColor c = selected ? red : white;
 
-	ImGui::SetCursorPos(mc.zoomfun(mc.transform(pos)));
-	ImGui::InvisibleButton(id, compdims[type] * mc.zoom);
+	ImGui::SetCursorPos(mc.convert(pos));
+	static ImVec2 sum;
+	ImGui::InvisibleButton(id, compdims[type] * GRID_SPACING_ZOOM);
 	if (ImGui::IsItemActive()) {
+		sum += ImGui::GetIO().MouseDelta / mc.zoom;
+
 		// Ha van kijelölés akkor az
 		// összes jelölt komponens (benne van ez is)
 		// menjen egyszerre, ha nincs csak ez
 		bool sel = false;
+		ImVec2 trunced = ImVec2(std::trunc(sum.x / GRID_SPACING), std::trunc(sum.y / GRID_SPACING));
 		for (Component* c : comps) {
 			if (c->selected) {
 				sel = true;
-				c->pos += ImGui::GetIO().MouseDelta / mc.zoom;
+				c->pos += trunced;
 			}
 		}
+		if (sel) sum -= trunced*GRID_SPACING;
 		if (!sel) {
-			pos += ImGui::GetIO().MouseDelta / mc.zoom;
+			ImVec2 trunced = ImVec2(std::trunc(sum.x / GRID_SPACING), std::trunc(sum.y / GRID_SPACING));
+			pos += trunced;
+			sum -= trunced*GRID_SPACING;
 		}
 	}
 
@@ -155,7 +165,7 @@ void Component::draw(ImDrawList* draw_list) {
 		}
 	}
 
-	(compdraw[type])(draw_list, mc.transform(pos), c, this);
+	(compdraw[type])(draw_list, pos, c, this);
 }
 
 Component::~Component() {  }

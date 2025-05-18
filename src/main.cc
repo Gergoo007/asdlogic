@@ -12,9 +12,8 @@
 #include <canvas.hh>
 
 #include <imgui/imgui.h>
-#include <imgui/imgui_impl_glfw.h>
-#include <imgui/imgui_impl_opengl3.h>
 
+#include <backend.hh>
 #include <util.hh>
 
 #include <cmath>
@@ -22,7 +21,9 @@
 #define min(a, b) ((a) > (b) ? (b) : (a))
 #define max(a, b) ((a) < (b) ? (b) : (a))
 
-int main() {
+int main(int argc, char** argv) {
+	Backend* backend = new Backend();
+
 	if (!glfwInit())
 		return 1;
 
@@ -34,6 +35,17 @@ int main() {
 	glfwMakeContextCurrent(window);
 	glfwSwapInterval(0);
 
+	// Platform kiválasztása
+	bool foundBackend = false;
+	for (u32 i = 0; i < argc - 1; i++) {
+		if (!strncmp(argv[1], "--platform=", 11)) {
+			backend->setBackend(argv[1] + 11);
+			foundBackend = true;
+		}
+	}
+
+	if (!foundBackend) backend->setBackend("opengl");
+
 	// Setup Dear ImGui context
 	IMGUI_CHECKVERSION();
 	ImGui::CreateContext();
@@ -41,20 +53,18 @@ int main() {
 	io.ConfigFlags |= ImGuiConfigFlags_NavEnableKeyboard;
 	io.ConfigFlags |= ImGuiConfigFlags_DockingEnable;
 
-	// Setup Platform/Renderer backends
-	ImGui_ImplGlfw_InitForOpenGL(window, true);
-	ImGui_ImplOpenGL3_Init();
+	backend->init(window);
 
 	ImFont* font1 = io.Fonts->AddFontFromFileTTF("arial.ttf", 20);
 
 	while (!glfwWindowShouldClose(window)) {
 		double start = glfwGetTime();
+		static double diff;
 
 		glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 		glClearColor(BG_COLOR, 1);
 
-		ImGui_ImplOpenGL3_NewFrame();
-		ImGui_ImplGlfw_NewFrame();
+		backend->newframe();
 		ImGui::NewFrame();
 
 		ImGui::PushFont(font1);
@@ -117,8 +127,8 @@ int main() {
 			if (sel.active) {
 				for (Component* c : comps) {
 					if (
-						std::clamp(mc.zoomx(c->pos.x + mc.panpos.x), min(sel.from.x, sel.to.x), max(sel.from.x, sel.to.x)) == (mc.zoomx(c->pos.x + mc.panpos.x)) &&
-						std::clamp(mc.zoomy(c->pos.y + mc.panpos.y), min(sel.from.y, sel.to.y), max(sel.from.y, sel.to.y)) == (mc.zoomy(c->pos.y + mc.panpos.y))
+						std::clamp(mc.convert(ImVec2(c->pos.x, 0)).x, min(sel.from.x, sel.to.x), max(sel.from.x, sel.to.x)) == mc.convert(ImVec2(c->pos.x, 0)).x &&
+						std::clamp(mc.convert(ImVec2(0, c->pos.y)).y, min(sel.from.y, sel.to.y), max(sel.from.y, sel.to.y)) == mc.convert(ImVec2(0, c->pos.y)).y
 					)
 						c->selected = true;
 					else
@@ -177,8 +187,8 @@ int main() {
 			ImVec2 gridpos = mc.snap(ImGui::GetMousePos());
 			ImGui::SetCursorPos(ImVec2(0, 0));
 			ImGui::Text("%f %f", gridpos.x, gridpos.y);
-			draw_list->AddCircleFilled(mc.convert(gridpos), 4, 0xffffffff);
-			draw_list->AddCircleFilled(ImGui::GetMousePos(), 4, 0xff00ffff);
+			// draw_list->AddCircleFilled(mc.convert(gridpos), 4, 0xffffffff);
+			// draw_list->AddCircleFilled(ImGui::GetMousePos(), 4, 0xff00ffff);
 
 			// ImGui::SetWindowFontScale(1);
 
@@ -186,28 +196,30 @@ int main() {
 			// 	ImGui::MenuItem("asd");
 			// 	ImGui::EndMenuBar();
 			// }
+
+			ImGui::SetCursorPos(ImVec2(0, 665));
+			ImGui::Text("FPS %lf\n", 1 / diff);
 		ImGui::End();
 
 		ImGui::PopFont();
 
 		ImGui::Render();
-		ImGui_ImplOpenGL3_RenderDrawData(ImGui::GetDrawData());
+		backend->render(ImGui::GetDrawData());
 
 		glfwSwapBuffers(window);
 		glfwPollEvents();
 
-		double diff = glfwGetTime() - start;
+		diff = glfwGetTime() - start;
 		// printf("FPS %lf\n", 1 / diff);
 	}
 
 	// Komponensek free-elése
-	for (auto ptr : comps) {
-		free(ptr);
-	}
+	for (auto ptr : comps) delete ptr;
 
-	ImGui_ImplOpenGL3_Shutdown();
-	ImGui_ImplGlfw_Shutdown();
+	backend->shutdown();
 	ImGui::DestroyContext();
+
+	delete backend;
 
 	glfwTerminate();
 }

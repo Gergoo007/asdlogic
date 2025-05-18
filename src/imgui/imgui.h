@@ -277,17 +277,37 @@ typedef void    (*ImGuiSizeCallback)(ImGuiSizeCallbackData* data);              
 typedef void*   (*ImGuiMemAllocFunc)(size_t sz, void* user_data);               // Function signature for ImGui::SetAllocatorFunctions()
 typedef void    (*ImGuiMemFreeFunc)(void* ptr, void* user_data);                // Function signature for ImGui::SetAllocatorFunctions()
 
+#include <xmmintrin.h>
+
 // ImVec2: 2D vector used to store positions, sizes etc. [Compile-time configurable type]
 // - This is a frequently used type in the API. Consider using IM_VEC2_CLASS_EXTRA to create implicit cast from/to our preferred type.
 // - Add '#define IMGUI_DEFINE_MATH_OPERATORS' before including this file (or in imconfig.h) to access courtesy maths operators for ImVec2 and ImVec4.
+typedef float float4 __attribute__((vector_size(16)));
 IM_MSVC_RUNTIME_CHECKS_OFF
-struct ImVec2
-{
-    float                                   x, y;
-    constexpr ImVec2()                      : x(0.0f), y(0.0f) { }
-    constexpr ImVec2(float _x, float _y)    : x(_x), y(_y) { }
-    float& operator[] (size_t idx)          { IM_ASSERT(idx == 0 || idx == 1); return ((float*)(void*)(char*)this)[idx]; } // We very rarely use this [] operator, so the assert overhead is fine.
-    float  operator[] (size_t idx) const    { IM_ASSERT(idx == 0 || idx == 1); return ((const float*)(const void*)(const char*)this)[idx]; }
+struct ImVec2 {
+	union {
+		__m128 xy;
+		struct {
+			float x, y;
+		};
+	};
+	
+	ImVec2(): xy(_mm_set_ps1(0.0f)) {  }
+	ImVec2(__m128 _xy): xy(_xy) {  }
+	ImVec2(float _x, float _y): xy(_mm_setr_ps(_x, _y, 0, 0)) { }
+
+	__m128 getxy() { return xy; }
+
+	float& operator[] (size_t idx) {
+		// IM_ASSERT(idx == 0 || idx == 1);
+		// return ((float*)(void*)(char*)this)[idx];
+		if (idx) return x; else return y;
+	} // We very rarely use this [] operator, so the assert overhead is fine.
+	
+	float operator[] (size_t idx) const {
+		// IM_ASSERT(idx == 0 || idx == 1);
+		return xy[idx];
+	}
 
 #ifdef IM_VEC2_CLASS_EXTRA
     IM_VEC2_CLASS_EXTRA     // Define additional constructors and implicit cast operators in imconfig.h to convert back and forth between your math types and ImVec2.
@@ -2859,21 +2879,38 @@ struct ImGuiListClipper
 #define IMGUI_DEFINE_MATH_OPERATORS_IMPLEMENTED
 IM_MSVC_RUNTIME_CHECKS_OFF
 // ImVec2 operators
-static inline ImVec2  operator*(const ImVec2& lhs, const float rhs)     { return ImVec2(lhs.x * rhs, lhs.y * rhs); }
-static inline ImVec2  operator/(const ImVec2& lhs, const float rhs)     { return ImVec2(lhs.x / rhs, lhs.y / rhs); }
-static inline ImVec2  operator+(const ImVec2& lhs, const ImVec2& rhs)   { return ImVec2(lhs.x + rhs.x, lhs.y + rhs.y); }
-static inline ImVec2  operator-(const ImVec2& lhs, const ImVec2& rhs)   { return ImVec2(lhs.x - rhs.x, lhs.y - rhs.y); }
-static inline ImVec2  operator*(const ImVec2& lhs, const ImVec2& rhs)   { return ImVec2(lhs.x * rhs.x, lhs.y * rhs.y); }
-static inline ImVec2  operator/(const ImVec2& lhs, const ImVec2& rhs)   { return ImVec2(lhs.x / rhs.x, lhs.y / rhs.y); }
+// static inline ImVec2  operator*(const ImVec2& lhs, const float rhs)     { return ImVec2(lhs.x * rhs, lhs.y * rhs); }
+// static inline ImVec2  operator/(const ImVec2& lhs, const float rhs)     { return ImVec2(lhs.x / rhs, lhs.y / rhs); }
+// static inline ImVec2  operator+(const ImVec2& lhs, const ImVec2& rhs)   { return ImVec2(lhs.x + rhs.x, lhs.y + rhs.y); }
+// static inline ImVec2  operator-(const ImVec2& lhs, const ImVec2& rhs)   { return ImVec2(lhs.x - rhs.x, lhs.y - rhs.y); }
+// static inline ImVec2  operator*(const ImVec2& lhs, const ImVec2& rhs)   { return ImVec2(lhs.x * rhs.x, lhs.y * rhs.y); }
+// static inline ImVec2  operator/(const ImVec2& lhs, const ImVec2& rhs)   { return ImVec2(lhs.x / rhs.x, lhs.y / rhs.y); }
+// static inline ImVec2  operator-(const ImVec2& lhs)                      { return ImVec2(-lhs.x, -lhs.y); }
+// static inline ImVec2& operator*=(ImVec2& lhs, const float rhs)          { lhs.x *= rhs; lhs.y *= rhs; return lhs; }
+// static inline ImVec2& operator/=(ImVec2& lhs, const float rhs)          { lhs.x /= rhs; lhs.y /= rhs; return lhs; }
+// static inline ImVec2& operator+=(ImVec2& lhs, const ImVec2& rhs)        { lhs.x += rhs.x; lhs.y += rhs.y; return lhs; }
+// static inline ImVec2& operator-=(ImVec2& lhs, const ImVec2& rhs)        { lhs.x -= rhs.x; lhs.y -= rhs.y; return lhs; }
+// static inline ImVec2& operator*=(ImVec2& lhs, const ImVec2& rhs)        { lhs.x *= rhs.x; lhs.y *= rhs.y; return lhs; }
+// static inline ImVec2& operator/=(ImVec2& lhs, const ImVec2& rhs)        { lhs.x /= rhs.x; lhs.y /= rhs.y; return lhs; }
+// static inline bool    operator==(const ImVec2& lhs, const ImVec2& rhs)  { return lhs.x == rhs.x && lhs.y == rhs.y; }
+// static inline bool    operator!=(const ImVec2& lhs, const ImVec2& rhs)  { return lhs.x != rhs.x || lhs.y != rhs.y; }
+
+static inline ImVec2  operator*(const ImVec2& lhs, const float rhs)     { return ImVec2(lhs.xy * rhs); }
+static inline ImVec2  operator/(const ImVec2& lhs, const float rhs)     { return ImVec2(lhs.xy / rhs); }
+static inline ImVec2  operator+(const ImVec2& lhs, const ImVec2& rhs)   { return ImVec2(lhs.xy + rhs.xy); }
+static inline ImVec2  operator-(const ImVec2& lhs, const ImVec2& rhs)   { return ImVec2(lhs.xy - rhs.xy); }
+static inline ImVec2  operator*(const ImVec2& lhs, const ImVec2& rhs)   { return ImVec2(lhs.xy * rhs.xy); }
+static inline ImVec2  operator/(const ImVec2& lhs, const ImVec2& rhs)   { return ImVec2(lhs.xy / rhs.xy); }
 static inline ImVec2  operator-(const ImVec2& lhs)                      { return ImVec2(-lhs.x, -lhs.y); }
-static inline ImVec2& operator*=(ImVec2& lhs, const float rhs)          { lhs.x *= rhs; lhs.y *= rhs; return lhs; }
-static inline ImVec2& operator/=(ImVec2& lhs, const float rhs)          { lhs.x /= rhs; lhs.y /= rhs; return lhs; }
-static inline ImVec2& operator+=(ImVec2& lhs, const ImVec2& rhs)        { lhs.x += rhs.x; lhs.y += rhs.y; return lhs; }
-static inline ImVec2& operator-=(ImVec2& lhs, const ImVec2& rhs)        { lhs.x -= rhs.x; lhs.y -= rhs.y; return lhs; }
-static inline ImVec2& operator*=(ImVec2& lhs, const ImVec2& rhs)        { lhs.x *= rhs.x; lhs.y *= rhs.y; return lhs; }
-static inline ImVec2& operator/=(ImVec2& lhs, const ImVec2& rhs)        { lhs.x /= rhs.x; lhs.y /= rhs.y; return lhs; }
+static inline ImVec2& operator*=(ImVec2& lhs, const float rhs)          { lhs.xy *= rhs; return lhs; }
+static inline ImVec2& operator/=(ImVec2& lhs, const float rhs)          { lhs.xy /= rhs; return lhs; }
+static inline ImVec2& operator+=(ImVec2& lhs, const ImVec2& rhs)        { lhs.xy += rhs.xy; return lhs; }
+static inline ImVec2& operator-=(ImVec2& lhs, const ImVec2& rhs)        { lhs.xy -= rhs.xy; return lhs; }
+static inline ImVec2& operator*=(ImVec2& lhs, const ImVec2& rhs)        { lhs.xy *= rhs.xy; return lhs; }
+static inline ImVec2& operator/=(ImVec2& lhs, const ImVec2& rhs)        { lhs.xy /= rhs.xy; return lhs; }
 static inline bool    operator==(const ImVec2& lhs, const ImVec2& rhs)  { return lhs.x == rhs.x && lhs.y == rhs.y; }
 static inline bool    operator!=(const ImVec2& lhs, const ImVec2& rhs)  { return lhs.x != rhs.x || lhs.y != rhs.y; }
+
 // ImVec4 operators
 static inline ImVec4  operator*(const ImVec4& lhs, const float rhs)     { return ImVec4(lhs.x * rhs, lhs.y * rhs, lhs.z * rhs, lhs.w * rhs); }
 static inline ImVec4  operator/(const ImVec4& lhs, const float rhs)     { return ImVec4(lhs.x / rhs, lhs.y / rhs, lhs.z / rhs, lhs.w / rhs); }
