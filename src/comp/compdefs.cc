@@ -12,28 +12,28 @@ const char* comptypes[] = {
 
 void draw_and(PARAMS) {
 	draw_list->AddBezierCubic(
-		maincanvas.zoomfun(ImVec2(pos.x + 20, pos.y + 0.5)),
-		maincanvas.zoomfun(ImVec2(pos.x + 100, pos.y + 0.5)),
-		maincanvas.zoomfun(ImVec2(pos.x + 100, pos.y + 0.5 + 100)),
-		maincanvas.zoomfun(ImVec2(pos.x + 20, pos.y + 0.5 + 100)),
+		mc.zoomfun(ImVec2(pos.x + 20, pos.y + 0.5)),
+		mc.zoomfun(ImVec2(pos.x + 100, pos.y + 0.5)),
+		mc.zoomfun(ImVec2(pos.x + 100, pos.y + 0.5 + 100)),
+		mc.zoomfun(ImVec2(pos.x + 20, pos.y + 0.5 + 100)),
 		c,
 		linew + 0.2
 	);
 	draw_list->AddLine(
-		maincanvas.zoomfun(ImVec2(pos.x, pos.y)),
-		maincanvas.zoomfun(ImVec2(pos.x + 20, pos.y)),
+		mc.zoomfun(ImVec2(pos.x, pos.y)),
+		mc.zoomfun(ImVec2(pos.x + 20, pos.y)),
 		c,
 		linew
 	);
 	draw_list->AddLine(
-		maincanvas.zoomfun(ImVec2(pos.x, pos.y + 100)),
-		maincanvas.zoomfun(ImVec2(pos.x + 20, pos.y + 100)),
+		mc.zoomfun(ImVec2(pos.x, pos.y + 100)),
+		mc.zoomfun(ImVec2(pos.x + 20, pos.y + 100)),
 		c,
 		linew
 	);
 	draw_list->AddLine(
-		maincanvas.zoomfun(ImVec2(pos.x, pos.y)),
-		maincanvas.zoomfun(ImVec2(pos.x, pos.y + 100)),
+		mc.zoomfun(ImVec2(pos.x, pos.y)),
+		mc.zoomfun(ImVec2(pos.x, pos.y + 100)),
 		c,
 		linew
 	);
@@ -41,7 +41,7 @@ void draw_and(PARAMS) {
 
 void draw_nand(PARAMS) {
 	draw_and(draw_list, pos, c, _comp);
-	draw_list->AddCircle(ImVec2(pos.x + 79 + 7, pos.y + 50) * maincanvas.zoom, ballw / 2 * maincanvas.zoom, c, 0, linew);
+	draw_list->AddCircle(ImVec2(pos.x + 79 + 7, pos.y + 50) * mc.zoom, ballw / 2 * mc.zoom, c, 0, linew);
 }
 
 void draw_nor(PARAMS) {
@@ -61,9 +61,9 @@ void draw_xor(PARAMS) {
 }
 
 void draw_input(PARAMS) {
-	draw_list->AddQuad(maincanvas.zoomfun(pos), maincanvas.zoomfun(ImVec2(pos.x + 50, pos.y)), maincanvas.zoomfun(ImVec2(pos.x + 50, pos.y + 50)), maincanvas.zoomfun(ImVec2(pos.x, pos.y + 50)), c, linew);
-	ImGui::SetCursorPos(maincanvas.zoomfun(ImVec2(pos.x, pos.y)));
-	CenteredText(_comp->state.INPUT.value ? "1" : "0", ImVec2(50, 50) * maincanvas.zoom);
+	draw_list->AddQuad(mc.zoomfun(pos), mc.zoomfun(ImVec2(pos.x + 50, pos.y)), mc.zoomfun(ImVec2(pos.x + 50, pos.y + 50)), mc.zoomfun(ImVec2(pos.x, pos.y + 50)), c, linew);
+	ImGui::SetCursorPos(mc.zoomfun(ImVec2(pos.x, pos.y)));
+	CenteredText(_comp->state.INPUT.value ? "1" : "0", ImVec2(50, 50) * mc.zoom);
 }
 
 void (*compdraw[])(PARAMS) = {
@@ -89,11 +89,11 @@ ImVec2 compdims[] = {
 NodeDef::NodeDef(ImVec2 _relpos, bool _inp): relpos(_relpos), inp(_inp) {  }
 
 std::list<NodeDef> compnodes[] = {
-	/* AND_GATE  */ { NodeDef(ImVec2(0, 0.25), true), NodeDef(ImVec2(0, 0.75), true), NodeDef(ImVec2(1.0, 0.50), false), },
-	/* NAND_GATE */ { NodeDef(ImVec2(0, 0.25), true), NodeDef(ImVec2(0, 0.75), true), NodeDef(ImVec2(1.0, 0.50), false), },
-	/* OR_GATE   */ { NodeDef(ImVec2(0, 0.25), true), NodeDef(ImVec2(0, 0.75), true), NodeDef(ImVec2(1.0, 0.50), false), },
-	/* NOR_GATE  */ { NodeDef(ImVec2(0, 0.25), true), NodeDef(ImVec2(0, 0.75), true), NodeDef(ImVec2(1.0, 0.50), false), },
-	/* XOR_GATE  */ { NodeDef(ImVec2(0, 0.25), true), NodeDef(ImVec2(0, 0.75), true), NodeDef(ImVec2(1.0, 0.50), false), },
-	/* XNOR_GATE */ { NodeDef(ImVec2(0, 0.25), true), NodeDef(ImVec2(0, 0.75), true), NodeDef(ImVec2(1.0, 0.50), false), },
-	/* INPUT     */ { NodeDef(ImVec2(1, 0.50), false) },
+	/* AND_GATE  */ { NodeDef(ImVec2(0, 1), true), NodeDef(ImVec2(0, 3), true), NodeDef(ImVec2(4, 2), false), },
+	/* NAND_GATE */ { NodeDef(ImVec2(0, 1), true), NodeDef(ImVec2(0, 3), true), NodeDef(ImVec2(4, 2), false), },
+	/* OR_GATE   */ { NodeDef(ImVec2(0, 1), true), NodeDef(ImVec2(0, 3), true), NodeDef(ImVec2(4, 2), false), },
+	/* NOR_GATE  */ { NodeDef(ImVec2(0, 1), true), NodeDef(ImVec2(0, 3), true), NodeDef(ImVec2(4, 2), false), },
+	/* XOR_GATE  */ { NodeDef(ImVec2(0, 1), true), NodeDef(ImVec2(0, 3), true), NodeDef(ImVec2(4, 2), false), },
+	/* XNOR_GATE */ { NodeDef(ImVec2(0, 1), true), NodeDef(ImVec2(0, 3), true), NodeDef(ImVec2(4, 2), false), },
+	/* INPUT     */ { NodeDef(ImVec2(1, 2), false) },
 };

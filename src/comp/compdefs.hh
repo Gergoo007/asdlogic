@@ -16,8 +16,8 @@ struct Component;
 #define ballw ((f32)14) // Inverter karika
 #define linew ((f32)1.2)
 
-#define gatebasew 79
-#define gatebaseh 100
+#define gatebasew 8
+#define gatebaseh 5
 
 #define COMPTYPELIST \
 	ADD_COMPTYPE(AND_GATE) \

@@ -13,6 +13,8 @@ struct Canvas {
 	ImVec2 unzoom(ImVec2 original);
 	
 	void drawGrid(ImDrawList* dl);
+	ImVec2 snap(ImVec2 coord);
+	ImVec2 convert(ImVec2 o);
 };
 
-extern Canvas maincanvas;
+extern Canvas mc;

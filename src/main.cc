@@ -17,6 +17,8 @@
 
 #include <util.hh>
 
+#include <cmath>
+
 #define min(a, b) ((a) > (b) ? (b) : (a))
 #define max(a, b) ((a) < (b) ? (b) : (a))
 
@@ -63,7 +65,7 @@ int main() {
 			ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoResize |
 			ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoTitleBar |
 			ImGuiWindowFlags_NoDecoration | ImGuiWindowFlags_NoBackground |
-			ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_MenuBar
+			ImGuiWindowFlags_NoCollapse
 		);
 			int w, h;
 			bool windowrightclick = true;
@@ -83,9 +85,11 @@ int main() {
 			}
 
 			ImDrawList* draw_list = ImGui::GetWindowDrawList();
+			mc.drawGrid(draw_list);
+
 			for (u32 i = 0; i < comps.size(); i++) {
 				auto& c = comps[i];
-				ImGui::SetWindowFontScale(maincanvas.zoom);
+				ImGui::SetWindowFontScale(mc.zoom);
 				c->draw(draw_list);
 				ImGui::SetWindowFontScale(1);
 				if (ImGui::BeginPopupContextItem(c->context_menu_id)) {
@@ -105,8 +109,6 @@ int main() {
 				}
 			}
 
-			maincanvas.drawGrid(draw_list);
-
 			// Kijelölő téglalap
 			if (sel.active)
 				draw_list->AddRectFilled(sel.from, sel.to, 0x80808080);
@@ -115,8 +117,8 @@ int main() {
 			if (sel.active) {
 				for (Component* c : comps) {
 					if (
-						std::clamp(maincanvas.zoomx(c->pos.x + maincanvas.panpos.x), min(sel.from.x, sel.to.x), max(sel.from.x, sel.to.x)) == (maincanvas.zoomx(c->pos.x + maincanvas.panpos.x)) &&
-						std::clamp(maincanvas.zoomy(c->pos.y + maincanvas.panpos.y), min(sel.from.y, sel.to.y), max(sel.from.y, sel.to.y)) == (maincanvas.zoomy(c->pos.y + maincanvas.panpos.y))
+						std::clamp(mc.zoomx(c->pos.x + mc.panpos.x), min(sel.from.x, sel.to.x), max(sel.from.x, sel.to.x)) == (mc.zoomx(c->pos.x + mc.panpos.x)) &&
+						std::clamp(mc.zoomy(c->pos.y + mc.panpos.y), min(sel.from.y, sel.to.y), max(sel.from.y, sel.to.y)) == (mc.zoomy(c->pos.y + mc.panpos.y))
 					)
 						c->selected = true;
 					else
@@ -155,26 +157,35 @@ int main() {
 			if (windowrightclick && ImGui::BeginPopupContextWindow("item1")) {
 				for (u32 i = 0; i < DEFINED_COMPS; i++) {
 					if (ImGui::Selectable(comptypes[i])) {
-						comps.push_back(new Component(maincanvas.unzoom(ImGui::GetMousePos() - maincanvas.panpos), (Comps)i));
+						comps.push_back(new Component(mc.snap(ImGui::GetMousePos()), (Comps)i));
 					}
 				}
 				ImGui::EndPopup();
 			}
 
 			if (ImGui::IsMouseDragging(ImGuiMouseButton_Middle)) {
-				maincanvas.panpos += io.MouseDelta / maincanvas.zoom;
+				mc.panpos += ImVec2((std::round(io.MouseDelta.x * 1024) / 1024) / mc.zoom, (std::round(io.MouseDelta.y * 1024) / 1024) / mc.zoom);
 			}
 
 			if (ImGui::IsKeyDown(ImGuiKey_LeftCtrl)) {
-				maincanvas.zoom += io.MouseWheel / 20.f * maincanvas.zoom;
+				mc.zoom = mc.zoom + (std::round(io.MouseWheel * 1024) / 1024) / 20.f * mc.zoom;
 			}
+
+			// printf("%d %d\n", (u32)mc.snap(ImGui::GetMousePos()).x, (u32)mc.snap(ImGui::GetMousePos()).y);
+
+			// Karika ahol van a kurzor grid-re snappelve
+			ImVec2 gridpos = mc.snap(ImGui::GetMousePos());
+			ImGui::SetCursorPos(ImVec2(0, 0));
+			ImGui::Text("%f %f", gridpos.x, gridpos.y);
+			draw_list->AddCircleFilled(mc.convert(gridpos), 4, 0xffffffff);
+			draw_list->AddCircleFilled(ImGui::GetMousePos(), 4, 0xff00ffff);
 
 			// ImGui::SetWindowFontScale(1);
 
-			if (ImGui::BeginMenuBar()) {
-				ImGui::MenuItem("asd");
-				ImGui::EndMenuBar();
-			}
+			// if (ImGui::BeginMenuBar()) {
+			// 	ImGui::MenuItem("asd");
+			// 	ImGui::EndMenuBar();
+			// }
 		ImGui::End();
 
 		ImGui::PopFont();

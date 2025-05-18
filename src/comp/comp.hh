@@ -7,15 +7,6 @@
 
 #include <vector>
 
-struct Connection {
-	u32 startcompid;
-	u32 startcompoutput;
-	u32 endcompid;
-	u32 endcompoutput;
-
-	std::vector<ImVec2> corners;
-};
-
 enum NodeState {
 	// o/
 	NS_0 = 0,

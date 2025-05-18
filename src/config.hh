@@ -1,3 +1,3 @@
 #pragma once
 
-#define GRID_SPACING 30
+#define GRID_SPACING 32

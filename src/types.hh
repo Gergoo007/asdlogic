@@ -1,6 +1,7 @@
 #pragma once
 
 #include <imgui/imgui.h>
+#include <cstdio>
 
 typedef unsigned char u8;
 typedef unsigned short u16;
