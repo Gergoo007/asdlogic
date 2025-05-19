@@ -1,5 +1,3 @@
-#include <GLFW/glfw3.h>
-
 #include <iostream>
 #include <string>
 #include <fstream>
@@ -7,7 +5,6 @@
 #include <vector>
 #include <algorithm>
 
-#include <colors.hh>
 #include <comp/comp.hh>
 #include <canvas.hh>
 
@@ -18,22 +15,15 @@
 
 #include <cmath>
 
+#define GLFW_INCLUDE_NONE
+#define GLFW_INCLUDE_VULKAN
+#include <GLFW/glfw3.h>
+
 #define min(a, b) ((a) > (b) ? (b) : (a))
 #define max(a, b) ((a) < (b) ? (b) : (a))
 
 int main(int argc, char** argv) {
 	Backend* backend = new Backend();
-
-	if (!glfwInit())
-		return 1;
-
-	GLFWwindow* window = glfwCreateWindow(1280, 720, "Hello World", NULL, NULL);
-	if (!window) {
-		glfwTerminate();
-		return 1;
-	}
-	glfwMakeContextCurrent(window);
-	glfwSwapInterval(0);
 
 	// Platform kiválasztása
 	bool foundBackend = false;
@@ -45,24 +35,18 @@ int main(int argc, char** argv) {
 	}
 
 	if (!foundBackend) backend->setBackend("opengl");
-
-	// Setup Dear ImGui context
-	IMGUI_CHECKVERSION();
-	ImGui::CreateContext();
+	backend->init();
+	
 	ImGuiIO& io = ImGui::GetIO();
-	io.ConfigFlags |= ImGuiConfigFlags_NavEnableKeyboard;
-	io.ConfigFlags |= ImGuiConfigFlags_DockingEnable;
-
-	backend->init(window);
 
 	ImFont* font1 = io.Fonts->AddFontFromFileTTF("arial.ttf", 20);
 
-	while (!glfwWindowShouldClose(window)) {
+	while (!backend->shouldclose()) {
 		double start = glfwGetTime();
 		static double diff;
 
-		glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
-		glClearColor(BG_COLOR, 1);
+		// glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+		// glClearColor(BG_COLOR, 1);
 
 		backend->newframe();
 		ImGui::NewFrame();
@@ -79,8 +63,10 @@ int main(int argc, char** argv) {
 		);
 			int w, h;
 			bool windowrightclick = true;
-			glfwGetWindowSize(window, &w, &h);
-			ImGui::SetWindowSize(ImVec2(w, h));
+			// ImGui::SetWindowSize(ImVec2(w, h));
+			ImVec2 asd = ImGui::GetWindowSize();
+			w = asd.x;
+			h = asd.y;
 			ImGui::SetWindowPos(ImVec2(0, 0));
 
 			if (ImGui::IsItemActive()) {
@@ -206,11 +192,9 @@ int main(int argc, char** argv) {
 		ImGui::Render();
 		backend->render(ImGui::GetDrawData());
 
-		glfwSwapBuffers(window);
-		glfwPollEvents();
+		backend->handlevents();
 
 		diff = glfwGetTime() - start;
-		// printf("FPS %lf\n", 1 / diff);
 	}
 
 	// Komponensek free-elése
@@ -220,6 +204,4 @@ int main(int argc, char** argv) {
 	ImGui::DestroyContext();
 
 	delete backend;
-
-	glfwTerminate();
 }

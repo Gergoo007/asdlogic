@@ -11,8 +11,8 @@ struct Component;
 #define noderad ((f32)4)
 #define hitbox ((f32)12)
 #define wireth ((f32)2)
-#define white IM_COL32(200, 200, 200, 255)
-#define red IM_COL32(200, 0, 0, 255)
+#define color_white IM_COL32(200, 200, 200, 255)
+#define color_red IM_COL32(200, 0, 0, 255)
 #define ballw ((f32)14) // Inverter karika
 #define linew ((f32)1.2)
 
@@ -30,7 +30,7 @@ struct Component;
 
 #define ADD_COMPTYPE(x) x,
 
-enum Comps {
+enum struct Comps : u32 {
 	COMPTYPELIST
 };
 

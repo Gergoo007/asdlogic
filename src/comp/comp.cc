@@ -22,7 +22,7 @@ ImU32 ns_colors[4] = {
 static u8 updategen = 0;
 
 static inline void process_node(ImDrawList* draw_list, ImVec2 pos, Node& node) {
-	const ImColor c = node.parent->selected ? red : ns_colors[node.state];
+	const ImColor c = node.parent->selected ? color_red : ns_colors[node.state];
 
 	draw_list->AddCircleFilled(mc.convert(pos + node.pos), noderad * mc.zoom, c);
 	// printf("trui %f %f\n", pos.x + node.pos.x, mc.convert(ImVec2(pos.x + node.pos.x, 0)).x);
@@ -100,7 +100,7 @@ static inline void process_node(ImDrawList* draw_list, ImVec2 pos, Node& node) {
 Component::Component(ImVec2 _pos, Comps _type): pos(_pos), type(_type) {
 	gen_ids(false);
 
-	for (NodeDef& def : compnodes[type]) {
+	for (NodeDef& def : compnodes[(u32)type]) {
 		if (def.inp) {
 			ins.push_back(Node(def.relpos, this, true));
 		} else {
@@ -131,11 +131,11 @@ void Component::draw(ImDrawList* draw_list) {
 		process_node(draw_list, pos, node);
 	}
 
-	const ImColor c = selected ? red : white;
+	const ImColor c = selected ? color_red : color_white;
 
 	ImGui::SetCursorPos(mc.convert(pos));
 	static ImVec2 sum;
-	ImGui::InvisibleButton(id, compdims[type] * GRID_SPACING_ZOOM);
+	ImGui::InvisibleButton(id, compdims[(u32)type] * GRID_SPACING_ZOOM);
 	if (ImGui::IsItemActive()) {
 		sum += ImGui::GetIO().MouseDelta / mc.zoom;
 
@@ -165,7 +165,7 @@ void Component::draw(ImDrawList* draw_list) {
 		}
 	}
 
-	(compdraw[type])(draw_list, pos, c, this);
+	(compdraw[(u32)type])(draw_list, pos, c, this);
 }
 
 Component::~Component() {  }
@@ -202,9 +202,9 @@ void Component::update(u8 upd) {
 	NodeState out;
 	bool invert = false;
 	switch (type) {
-		case NAND_GATE:
+		case Comps::NAND_GATE:
 			invert = true;
-		case AND_GATE: {
+		case Comps::AND_GATE: {
 			out = NodeState::NS_1;
 
 			for (Node& i : ins) {
@@ -225,7 +225,7 @@ void Component::update(u8 upd) {
 			break;
 		}
 
-		case INPUT: {
+		case Comps::INPUT: {
 			if (state.INPUT.value & 1)
 				out = NodeState::NS_1;
 			else
@@ -234,7 +234,7 @@ void Component::update(u8 upd) {
 		}
 
 		default: {
-			printf("Nincs impl: %s\n", comptypes[type]);
+			printf("Nincs impl: %s\n", comptypes[(u32)type]);
 			break;
 		}
 	}

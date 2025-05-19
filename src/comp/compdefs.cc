@@ -8,7 +8,13 @@
 #include <config.hh>
 
 const char* comptypes[] = {
-	COMPTYPELIST
+	"And Gate", // ADD_COMPTYPE(COMP_AND_GATE)
+	"Nand Gate", // ADD_COMPTYPE(COMP_NAND_GATE)
+	"Or Gate", // ADD_COMPTYPE(COMP_OR_GATE)
+	"Nor Gate", // ADD_COMPTYPE(COMP_NOR_GATE)
+	"Xor Gate", // ADD_COMPTYPE(COMP_XOR_GATE)
+	"Xnor Gate", // ADD_COMPTYPE(COMP_XNOR_GATE)
+	"Input", // ADD_COMPTYPE(COMP_INPUT)
 };
 
 const f32 curveat = 1.75;

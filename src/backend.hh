@@ -6,15 +6,20 @@
 
 #include <types.hh>
 
-#if defined(_WIN64) || defined(_WIN32) || defined(__CYGWIN__)
-#include <imgui/imgui_impl_dx12.h>
-#endif
+// #if defined(_WIN64) || defined(_WIN32) || defined(__CYGWIN__)
+// #include <imgui/imgui_impl_dx12.h>
+// #endif
 
 struct Backend {
-	enum Selection {
-		BE_GLFW3_OPENGL3,
-		BE_GLFW3_VULKAN,
-		BE_DX12,
+	enum struct WindowingSelection {
+		PLATFORM_WIN32,
+		PLATFORM_GLFW3,
+	};
+
+	enum struct GlSelection {
+		OPENGL3,
+		VULKAN,
+		DX12,
 	};
 
 	struct {
@@ -31,18 +36,9 @@ struct Backend {
 
 			} opengl;
 			struct {
-				VkAllocationCallbacks*	g_Allocator;
-				VkInstance				g_Instance;
-				VkPhysicalDevice		g_PhysicalDevice;
-				VkDevice				g_Device;
-				u32						g_QueueFamily;
-				VkQueue					g_Queue;
-				VkPipelineCache			g_PipelineCache;
-				VkDescriptorPool		g_DescriptorPool;
-
-				ImGui_ImplVulkanH_Window* g_MainWindowData;
-				u32						g_MinImageCount;
-				bool					g_SwapChainRebuild;
+				VkApplicationInfo appInfo;
+				ImGui_ImplVulkan_InitInfo initInfo;
+				ImGui_ImplVulkanH_Window* MainWindowData;
 			} vulkan;
 			struct {
 
@@ -50,12 +46,15 @@ struct Backend {
 		};
 	} backendStuff;
 
-	Selection backend;
+	WindowingSelection windowing;
+	GlSelection gl;
 
-	void (*init)(GLFWwindow* win);
-	void (*newframe)();
-	void (*render)(ImDrawData *draw_data);
-	void (*shutdown)();
+	void init();
+	bool shouldclose();
+	void newframe();
+	void render(ImDrawData* draw_data);
+	void handlevents();
+	void shutdown();
 
 	void setBackend(const char* name);
 };
