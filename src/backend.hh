@@ -23,6 +23,7 @@ struct Backend {
 	};
 
 	struct {
+		int width, height;
 		union {
 			struct {
 				GLFWwindow* window;
@@ -58,3 +59,5 @@ struct Backend {
 
 	void setBackend(const char* name);
 };
+
+extern Backend* backend;

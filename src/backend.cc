@@ -28,6 +28,8 @@
 static VkDebugReportCallbackEXT g_DebugReport = VK_NULL_HANDLE;
 #endif
 
+Backend* backend;
+
 // Data
 static VkAllocationCallbacks*   g_Allocator = nullptr;
 static VkInstance               g_Instance = VK_NULL_HANDLE;
@@ -485,15 +487,13 @@ void Backend::render(ImDrawData* draw_data) {
 void Backend::handlevents() {
 	if (windowing == WindowingSelection::PLATFORM_GLFW3) {
 		glfwPollEvents();
+		glfwGetFramebufferSize(backendStuff.glfw.window, &backendStuff.width, &backendStuff.height);
 
 		if (gl == GlSelection::VULKAN) {
 			// Resize swap chain?
-			int fb_width, fb_height;
-			glfwGetFramebufferSize(backendStuff.glfw.window, &fb_width, &fb_height);
-			printf("%d %d\n", fb_width, fb_height);
-			if (fb_width > 0 && fb_height > 0 && (g_SwapChainRebuild || g_MainWindowData.Width != fb_width || g_MainWindowData.Height != fb_height)) {
+			if (backendStuff.width > 0 && backendStuff.height > 0 && (g_SwapChainRebuild || g_MainWindowData.Width != backendStuff.width || g_MainWindowData.Height != backendStuff.height)) {
 				ImGui_ImplVulkan_SetMinImageCount(g_MinImageCount);
-				ImGui_ImplVulkanH_CreateOrResizeWindow(g_Instance, g_PhysicalDevice, g_Device, &g_MainWindowData, g_QueueFamily, g_Allocator, fb_width, fb_height, g_MinImageCount);
+				ImGui_ImplVulkanH_CreateOrResizeWindow(g_Instance, g_PhysicalDevice, g_Device, &g_MainWindowData, g_QueueFamily, g_Allocator, backendStuff.width, backendStuff.height, g_MinImageCount);
 				g_MainWindowData.FrameIndex = 0;
 				g_SwapChainRebuild = false;
 			}

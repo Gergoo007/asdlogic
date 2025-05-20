@@ -23,7 +23,7 @@
 #define max(a, b) ((a) < (b) ? (b) : (a))
 
 int main(int argc, char** argv) {
-	Backend* backend = new Backend();
+	backend = new Backend();
 
 	// Platform kiválasztása
 	bool foundBackend = false;
@@ -63,7 +63,7 @@ int main(int argc, char** argv) {
 		);
 			int w, h;
 			bool windowrightclick = true;
-			// ImGui::SetWindowSize(ImVec2(w, h));
+			ImGui::SetWindowSize(ImVec2(backend->backendStuff.width, backend->backendStuff.height));
 			ImVec2 asd = ImGui::GetWindowSize();
 			w = asd.x;
 			h = asd.y;
@@ -79,7 +79,7 @@ int main(int argc, char** argv) {
 			} else {
 				sel.active = false;
 			}
-
+ 
 			ImDrawList* draw_list = ImGui::GetWindowDrawList();
 			mc.drawGrid(draw_list);
 
@@ -183,7 +183,7 @@ int main(int argc, char** argv) {
 			// 	ImGui::EndMenuBar();
 			// }
 
-			ImGui::SetCursorPos(ImVec2(0, 665));
+			ImGui::SetCursorPos(ImVec2(0, backend->backendStuff.height - 20));
 			ImGui::Text("FPS %lf\n", 1 / diff);
 		ImGui::End();
 

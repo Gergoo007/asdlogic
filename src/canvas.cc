@@ -1,6 +1,7 @@
 #include <canvas.hh>
 #include <cmath>
 #include <config.hh>
+#include <backend.hh>
 
 Canvas mc { .zoom = 1.0f, .panpos = ImVec2(0, 0) };
 
@@ -9,28 +10,28 @@ Canvas mc { .zoom = 1.0f, .panpos = ImVec2(0, 0) };
 // }
 
 // ImVec2 Canvas::zoomfun(ImVec2 original) {
-// 	ImVec2 center = (ImVec2(1280, 720) / 2);
+// 	ImVec2 center = (ImVec2(backend->backendStuff.width, backend->backendStuff.height) / 2);
 // 	return original*zoom - center*zoom + center;
 // }
 
 f32 Canvas::zoomx(f32 original) {
-	ImVec2 center = (ImVec2(1280, 720) / 2);
+	ImVec2 center = (ImVec2(backend->backendStuff.width, backend->backendStuff.height) / 2);
 	return original*zoom - center.x*zoom + center.x;
 }
 
 f32 Canvas::zoomy(f32 original) {
-	ImVec2 center = (ImVec2(1280, 720) / 2);
+	ImVec2 center = (ImVec2(backend->backendStuff.width, backend->backendStuff.height) / 2);
 	return original*zoom - center.y*zoom + center.y;
 }
 
 // ImVec2 Canvas::unzoom(ImVec2 zoomed) {
 // 	// TODO: GetWindowPos nem jó mert szar
-// 	ImVec2 center = (ImVec2(1280, 720) / 2);
+// 	ImVec2 center = (ImVec2(backend->backendStuff.width, backend->backendStuff.height) / 2);
 // 	return zoomed/zoom + center - center/zoom;
 // }
 
 void Canvas::drawGrid(ImDrawList* dl) {
-	ImVec2 screen = ImVec2(1280, 720);
+	ImVec2 screen = ImVec2(backend->backendStuff.width, backend->backendStuff.height);
 	ImVec2 center = (screen) / 2;
 
 	// dl->AddLine(ImVec2(center.x, 0), ImVec2(center.x, screen.y), 0xffffffff, 2 * zoom);
@@ -54,7 +55,7 @@ void Canvas::drawGrid(ImDrawList* dl) {
 
 // Képernyő koordinátából canvas koordináta
 ImVec2 Canvas::snap(ImVec2 coord) {
-	const ImVec2 screen = ImVec2(1280, 720);
+	const ImVec2 screen = ImVec2(backend->backendStuff.width, backend->backendStuff.height);
 	const ImVec2 center = (screen) / 2;
 
 	// Ennyi pixellel van elcsúszva a grid, tehát a pontok amikhez a koordinátát snappelni kell
@@ -85,7 +86,7 @@ ImVec2 Canvas::snap(ImVec2 coord) {
 
 // Canvas koordinátából képernyő koordináta
 ImVec2 Canvas::convert(ImVec2 gridpos) {
-	const ImVec2 screen = ImVec2(1280, 720);
+	const ImVec2 screen = ImVec2(backend->backendStuff.width, backend->backendStuff.height);
 	const ImVec2 center = (screen) / 2;
 
 	// Ennyivel van elcsúszva a grid, tehát a pontok amikhez a koordinátát snappelni kell

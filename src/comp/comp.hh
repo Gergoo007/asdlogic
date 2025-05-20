@@ -58,7 +58,6 @@ struct Component {
 	bool selected = false;
 	u8 updated = 0;
 	Comps type;
-	Component* clone;
 
 	union {
 		struct {

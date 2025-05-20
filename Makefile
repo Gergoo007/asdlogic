@@ -15,14 +15,19 @@ LINUXFLAGS := $(shell pkg-config --libs --cflags gl glfw3 vulkan)
 WIN64FLAGS := -lopengl32 $(shell x86_64-w64-mingw32-pkg-config --libs --cflags glfw3 vulkan) -lgdi32
 _CFLAGS := $(CFLAGS) -std=gnu++23 -Wshadow -O0 -g -Wno-multichar -Isrc -MMD -MP
 
-unix:
-	CC=g++ CFLAGS='$(LINUXFLAGS)' make link
+unix: clean
+	CC=g++ CFLAGS='$(LINUXFLAGS)' $(MAKE) link
 
-windows:
-	CC=x86_64-w64-mingw32-g++ CFLAGS='$(WIN64FLAGS)' make link
+windows: clean
+	CC=x86_64-w64-mingw32-g++ CFLAGS='$(WIN64FLAGS)' $(MAKE) link
 
-windows_static:
-	CC=x86_64-w64-mingw32-g++ CFLAGS='$(WIN64FLAGS)' make static_link
+windows_static: clean
+	CC=x86_64-w64-mingw32-g++ CFLAGS='$(WIN64FLAGS)' $(MAKE) static_link
+
+all:
+	$(MAKE) unix
+	$(MAKE) windows
+	$(MAKE) windows_static
 
 static_link: $(CPPOBJS) $(CCOBJS)
 	$(CC) $(CPPOBJS) $(CCOBJS) $(_CFLAGS) -static -o asdlogic_static
