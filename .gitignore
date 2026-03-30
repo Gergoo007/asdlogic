@@ -1,0 +1,7 @@
+/target/release/*
+!/target/release/turiplogic.exe
+
+/target/debug/*
+!/target/debug/turiplogic.exe
+
+/target/flycheck0
