@@ -1,4 +1,4 @@
-use std::fs;
+use std::{fs, ops::{Index, IndexMut}, process::exit};
 
 use strum::{EnumMessage, IntoEnumIterator};
 use wgpu::ShaderModuleDescriptor;
@@ -87,21 +87,26 @@ impl Canvas {
 			c.draw(&mut self.inner, ui);
 		}
 
-		let mut approved = vec![true; self.comps.len()];
-
 		// Move requestek feldolgozása
-		for i in 0..self.comps.len() {
-			for j in 0..self.comps.len() {
-				if i == j { continue; }
+		'turip: for i in 0..self.comps.len() {
+			let request = self.comps[i].move_request.take();
 
-				let hb = self.comps[i].kind.hitbox();
+			if let Some(newpos) = request {
+				for j in 0..self.comps.len() {
+					if i == j { continue; }
 
-				if /* !bounds_check(comps[i].pos + comps[i].hitbox) */ false {
-				// if self.comps[i].pos 
-					if let Some(request) = self.comps[i].move_request {
-						self.comps[i].pos += request;
+					let a1 = newpos;
+					let b1 = self.comps[j].pos;
+					let a2 = a1 + self.comps[i].kind.hitbox();
+					let b2 = b1 + self.comps[j].kind.hitbox();
+
+					if a1.x < b2.x && a2.x > b1.x &&
+					a1.y < b2.y && a2.y > b1.y {
+						continue 'turip;
 					}
 				}
+
+				self.comps[i].pos = newpos;
 			}
 		}
 	}

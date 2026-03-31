@@ -1,3 +1,5 @@
+use std::time::Instant;
+
 use crate::canvas::{CanvasInner, Vec2};
 
 struct Node {
@@ -116,7 +118,6 @@ impl Gate {
 					canvas.grab_mouse_offset.take();
 				}
 			}
-			// self.move_request.take();
 		}
 	}
 
