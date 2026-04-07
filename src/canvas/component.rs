@@ -1,4 +1,4 @@
-use crate::{canvas::{CanvasInner, NodeOwner, NodeHandler, NodeKey, Vec2, wires::{Wire, Wires}}, config};
+use crate::{canvas::{CanvasInner, CompKey, NodeHandler, NodeKey, NodeOwner, Vec2, wires::{Wire, Wires}}, config};
 
 #[derive(PartialEq)]
 pub struct Node {
@@ -9,15 +9,13 @@ pub struct Node {
 impl Node {
 	fn draw(&self, c: &Gate, nidx: usize, inner: &mut CanvasInner, draw_list: &imgui::DrawListMut, ui: &imgui::Ui)
 	-> (Option<Wire>, Option<Wire>) {
-		let pos = c.pos + self.pos;
-
-		draw_list.add_circle(inner.canvas_to_window(pos), config::NODE_RADIUS, 0xffffffff).filled(true).build();
+		draw_list.add_circle(inner.canvas_to_window(self.pos), config::NODE_RADIUS, 0xffffffff).filled(true).build();
 
 		let offset = config::NODE_HITBOX / 2.0;
 
-		ui.set_cursor_pos(inner.canvas_to_window(pos - offset));
+		ui.set_cursor_pos(inner.canvas_to_window(self.pos - offset));
 
-		ui.invisible_button(format!("comp{}input{}", c.id, nidx), inner.canvas_to_window_size(pos - offset, config::NODE_HITBOX));
+		ui.invisible_button(format!("comp{}input{}", c.id, nidx), inner.canvas_to_window_size(self.pos - offset, config::NODE_HITBOX));
 
 		let mut w1: Wire = Wire::skeleton(Vec2::new(0.0, 0.0), Vec2::new(0.0, 0.0));
 		let mut w2: Wire = Wire::skeleton(Vec2::new(0.0, 0.0), Vec2::new(0.0, 0.0));
@@ -26,12 +24,12 @@ impl Node {
 		let deactivated = ui.is_item_deactivated();
 
 		if active {
-			draw_list.add_rect(inner.canvas_to_window(pos - offset), inner.canvas_to_window(pos - offset) + inner.canvas_to_window_size(pos - offset, config::NODE_HITBOX), 0xffffffff)
+			draw_list.add_rect(inner.canvas_to_window(self.pos - offset), inner.canvas_to_window(self.pos - offset) + inner.canvas_to_window_size(self.pos - offset, config::NODE_HITBOX), 0xffffffff)
 				.build();
 		}
 
 		if active || deactivated {
-			let from = pos;
+			let from = self.pos;
 			let to = inner.window_to_canvas(ui.io().mouse_pos.into());
 			let vec = to - from;
 
@@ -68,9 +66,6 @@ impl Node {
 
 		let mut ret = (None, None);
 		if deactivated {
-			// println!("w1 {:?} w2 {:?}", w1, w2);
-			// if w1.start != w1.end { wires.try_add(w1, nodes); }
-			// if w2.start != w2.end { wires.try_add(w2, nodes); }
 			if w1.start != w1.end { ret.0.replace(w1); }
 			if w2.start != w2.end { ret.1.replace(w2); }
 		}
@@ -125,7 +120,7 @@ pub struct Gate {
 
 impl Gate {
 	pub fn new(kind: GateKind, pos: Vec2, id: u64, nodes: &mut NodeHandler) -> Self {
-		let nodes = kind.nodes().map(|v| { nodes.add_node(v) });
+		let nodes = kind.nodes().map(|mut v| { v.pos += pos; nodes.add_node(v) });
 
 		Self {
 			kind,
@@ -213,6 +208,28 @@ impl Gate {
 				}
 			}
 		}
+	}
+
+	pub fn move_to(&mut self, to: Vec2, nodes: &mut NodeHandler, cidx: CompKey) {
+		// Régi node-ok eltávolítása, újak hozzáadása
+		// Csak a HashMap-nél kell megváltoztatni a Key-t, az Arénában maradhat az Index
+
+		// // Koordináták frissítése a HashMap-ben
+		// for nidx in self.nodes {
+		// 	let oldpos = nodes.node_storage[nidx].pos;
+			
+		// }
+
+		// // Koordináták frissítése az Arénában
+		// for nidx in self.nodes {
+		// 	nodes.node_storage[nidx].pos += to - self.pos;
+		// }
+
+		for nidx in self.nodes {
+			nodes.move_node(nidx, to - self.pos, NodeOwner::Comp(cidx));
+		}
+
+		self.pos = to;
 	}
 
 	fn update(&mut self) {

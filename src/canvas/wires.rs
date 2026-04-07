@@ -1,6 +1,6 @@
 use palette::FromColor;
 
-use crate::{canvas::{CanvasInner, NodeHandler, NodeKey, NodeOwner, Vec2, WireStorage, component::Node}, config};
+use crate::{canvas::{CanvasInner, NodeHandler, NodeKey, NodeOwner, Vec2, WireKey, WireStorage, component::Node}, config};
 
 #[derive(Debug)]
 pub struct Wire {
@@ -20,15 +20,19 @@ impl Wire {
 		}
 	}
 
-	pub fn overwrite(&mut self, start: Vec2, end: Vec2, nodes: &mut NodeHandler) {
-		let n1 = nodes.remove_node(self.start, |_| true);
-		let n2 = nodes.remove_node(self.end, |_| true);
+	pub fn overwrite(&mut self, start: Vec2, end: Vec2, nodes: &mut NodeHandler, oldidx: WireKey) {
+		// if nodes.count_nodes(self.start) > 1 {
+			
+		// }
+
+		nodes.remove_node(self.start, NodeOwner::Wire(oldidx));
+		nodes.remove_node(self.end, NodeOwner::Wire(oldidx));
 
 		self.start = start;
 		self.end = end;
 
-		nodes.add_node(Node { pos: self.start, owner: n1.owner });
-		nodes.add_node(Node { pos: self.end, owner: n2.owner });
+		nodes.add_node(Node { pos: self.start, owner: Some(NodeOwner::Wire(oldidx)) });
+		nodes.add_node(Node { pos: self.end, owner: Some(NodeOwner::Wire(oldidx)) });
 	}
 
 	pub fn draw(&self, canvas: &CanvasInner, draw_list: &imgui::DrawListMut, color: Option<u32>) {
@@ -83,7 +87,7 @@ impl Wires {
 	}
 
 	pub fn try_add(&mut self, new: Wire, nodes: &mut NodeHandler) {
-		for (_, old) in self.wires.iter_mut() {
+		for (oldidx, old) in self.wires.iter_mut() {
 			let v1 = old.start - old.end;
 			let v2 = new.start - new.end;
 			let parallel = v1.perp_dot(v2).abs() < 1e-6;
@@ -95,41 +99,41 @@ impl Wires {
 
 			// Az új vezetékben elfér egy másik régebbi
 			if new.touches(old.start) && new.touches(old.end) {
-				old.overwrite(new.start, new.end, nodes);
+				old.overwrite(new.start, new.end, nodes, oldidx);
 				return;
 			}
 
 			// Az új vezetéket össze lehet vonni egy meglévővel (csak érintkeznek)
 			if parallel {
 				if old.start == new.start {
-					old.overwrite(new.end, old.end, nodes);
+					old.overwrite(new.end, old.end, nodes, oldidx);
 					return;
 				} else if old.start == new.end {
-					old.overwrite(old.end, new.start, nodes);
+					old.overwrite(old.end, new.start, nodes, oldidx);
 					return;
 				} else if old.end == new.start {
-					old.overwrite(old.start, new.end, nodes);
+					old.overwrite(old.start, new.end, nodes, oldidx);
 					return;
 				} else if old.end == new.end {
-					old.overwrite(old.start, new.start, nodes);
+					old.overwrite(old.start, new.start, nodes, oldidx);
 					return;
 				}
 
 				// Az új vezetéket össze lehet vonni egy meglévővel (az egyik a másikból indul ki + párhuzamosak)
 				if old.touches(new.start) {
 					if new.touches(old.start) {
-						old.overwrite(old.end, new.end, nodes);
+						old.overwrite(old.end, new.end, nodes, oldidx);
 						return;
 					} else if new.touches(old.end) {
-						old.overwrite(old.start,new.end, nodes);
+						old.overwrite(old.start,new.end, nodes, oldidx);
 						return;
 					}
 				} else if old.touches(new.end) {
 					if new.touches(old.start) {
-						old.overwrite(old.end, new.start, nodes);
+						old.overwrite(old.end, new.start, nodes, oldidx);
 						return;
 					} else if new.touches(old.end) {
-						old.overwrite(old.start, new.start, nodes);
+						old.overwrite(old.start, new.start, nodes, oldidx);
 						return;
 					}
 				}

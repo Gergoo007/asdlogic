@@ -21,7 +21,7 @@ pub type CompKey = generational_arena::Index;
 pub type WireStorage = generational_arena::Arena<Wire>;
 pub type WireKey = generational_arena::Index;
 
-#[derive(PartialEq)]
+#[derive(PartialEq, Clone, Copy)]
 pub enum NodeOwner {
 	Wire(WireKey),
 	Comp(CompKey),
@@ -62,15 +62,51 @@ impl NodeHandler {
 		idx
 	}
 
-	pub fn remove_node<F>(&mut self, at: Vec2, pred: F) -> Node where F: Fn(&Node) -> bool {
-		let vals = self.node_lookup.remove(&vec2int(at)).unwrap();
-		let mut node = None;
-		for v in vals {
-			if pred(&self.node_storage[v]) {
-				node.replace(self.node_storage.remove(v).unwrap());
-			}
+	pub fn count_nodes(&self, at: Vec2) -> usize {
+		self.node_lookup[&vec2int(at)].len()
+	}
+
+	pub fn remove_node(&mut self, at: Vec2, owner: NodeOwner) {
+		let vals = self.node_lookup.get_mut(&vec2int(at)).unwrap();
+		
+		// Az extract_if eltávolítja az adott NodeKey-t a HashMap vektorából,
+		// a closure-ön belül pedig a NodeStorage Arénából is kiszedem
+		
+		let _ = vals.extract_if(.., |e| {
+			let remove = *self.node_storage[*e].owner.as_ref().unwrap() == owner;
+			if remove { self.node_storage.remove(*e); }
+			remove
+		});
+
+		// Ha ez volt az ujtolsó Node ezen a koordinátán, akkor
+		// fel is szabadítom ezt a bejegyzést a HashMap-ből
+		if vals.len() == 0 {
+			self.node_lookup.remove(&vec2int(at));
 		}
-		node.unwrap()
+	}
+
+	pub fn move_node(&mut self, nidx: NodeKey, by: Vec2, owner: NodeOwner) {
+		let oldpos = self.node_storage[nidx].pos;
+		let newpos = oldpos + by;
+
+		// Koordináták frissítése a HashMap-ben:
+		// 1. ki kell venni a releváns NodeKey-eket az adott koordinátából
+		let mut iter = self.node_lookup.get_mut(&vec2int(oldpos)).unwrap().extract_if(.., |v| {
+			self.node_storage[*v].owner == Some(owner)
+		});
+		let node = iter.next().unwrap();
+
+		assert!(iter.next().is_none());
+
+		drop(iter);
+
+		// 2. vissza kell tenni az új koordinátára a kivett értékeket
+		self.node_lookup.entry(vec2int(newpos)).and_modify(|nodekeys| {
+			nodekeys.push(node);
+		}).or_insert(vec![ node ]);
+
+		// Koordináták frissítése az Arénában
+		self.node_storage[nidx].pos += by;
 	}
 }
 
@@ -159,7 +195,8 @@ impl Canvas {
 					}
 				}
 
-				self.comps[*k].pos = newpos;
+				self.comps[*k].move_to(newpos, &mut self.nodes, *k);
+				// self.comps[*k].pos = newpos;
 			}
 		}
 
@@ -169,16 +206,14 @@ impl Canvas {
 			
 			let draw_list = ui.get_window_draw_list();
 
-			let mut pos = n.pos;
-
 			// hahah ck xdddddddd cigán ykruva xd
-			if let Some(ck) = &n.owner {
-				if let NodeOwner::Comp(c) = ck {
-					pos += self.comps[*c].pos;
-				}
-			}
+			// if let Some(ck) = &n.owner {
+			// 	if let NodeOwner::Comp(c) = ck {
+			// 		pos += self.comps[*c].pos;
+			// 	}
+			// }
 
-			draw_list.add_circle(self.inner.canvas_to_window(pos), config::NODE_RADIUS, 0xff00bfff)
+			draw_list.add_circle(self.inner.canvas_to_window(n.pos), config::NODE_RADIUS, 0xff00bfff)
 				.filled(true)
 				.build();
 		}
