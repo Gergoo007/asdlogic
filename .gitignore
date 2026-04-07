@@ -5,3 +5,4 @@
 !/target/debug/turiplogic.exe
 
 /target/flycheck0
+/target/.rustc_info.json

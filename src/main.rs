@@ -13,6 +13,7 @@ use winit::{
 	window::Window,
 };
 
+pub mod config;
 mod canvas;
 
 struct ImguiState {
@@ -55,7 +56,7 @@ impl AppWindow {
 
 			let attributes = Window::default_attributes()
 				.with_inner_size(size)
-				.with_title(format!("turiplogic v0.000000000000001"));
+				.with_title(format!("turiplogic v0.000000000000002"));
 			Arc::new(event_loop.create_window(attributes).unwrap())
 		};
 

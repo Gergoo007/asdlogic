@@ -1,27 +1,77 @@
-use std::{fs, ops::{Index, IndexMut}, process::exit};
+use std::{collections::HashMap};
 
+use glam::IVec2;
 use strum::{EnumMessage, IntoEnumIterator};
-use wgpu::ShaderModuleDescriptor;
 
-use crate::canvas::component::{Gate, GateKind};
+use crate::{canvas::{component::{Gate, GateKind, Node}, inner::CanvasInner, wires::{Wire, Wires}}, config};
 
 mod component;
+mod wires;
+mod inner;
 
 pub type Vec2 = glam::Vec2;
 
-pub struct Canvas {
-	pub inner: CanvasInner,
-	pub comps: Vec<Gate>,
+pub type NodeStorage = generational_arena::Arena<Node>;
+pub type NodeKey = generational_arena::Index;
+pub type NodeLookup = HashMap<IVec2, Vec<NodeKey>>;
+
+pub type CompStorage = generational_arena::Arena<Gate>;
+pub type CompKey = generational_arena::Index;
+
+pub type WireStorage = generational_arena::Arena<Wire>;
+pub type WireKey = generational_arena::Index;
+
+#[derive(PartialEq)]
+pub enum NodeOwner {
+	Wire(WireKey),
+	Comp(CompKey),
 }
 
-pub struct CanvasInner {
-	size: Vec2,
-	pan: Vec2,
-	zoom: f32,
-	pipeline: wgpu::RenderPipeline,
-	lastmouse: Option<Vec2>,
-	compid: u64,
-	grab_mouse_offset: Option<(u64, Vec2)>
+fn vec2int(float: Vec2) -> IVec2 {
+	IVec2 { x: float.x as i32, y: float.y as i32 }
+}
+
+fn vec2float(int: Vec2) -> Vec2 {
+	Vec2 { x: int.x as f32, y: int.y as f32 }
+}
+
+pub struct Canvas {
+	pub inner: CanvasInner,
+	pub comps: CompStorage,
+	pub wires: Wires,
+	pub nodes: NodeHandler,
+}
+
+pub struct NodeHandler {
+	pub node_storage: NodeStorage,
+	pub node_lookup: NodeLookup,
+}
+
+impl NodeHandler {
+	pub fn new() -> Self {
+		Self {
+			node_storage: NodeStorage::new(),
+			node_lookup: NodeLookup::new(),
+		}
+	}
+
+	pub fn add_node(&mut self, n: Node) -> NodeKey {
+		let pos = n.pos;
+		let idx = self.node_storage.insert(n);
+		self.node_lookup.entry(vec2int(pos)).and_modify(|v| { v.push(idx); }).or_insert(vec![idx]);
+		idx
+	}
+
+	pub fn remove_node<F>(&mut self, at: Vec2, pred: F) -> Node where F: Fn(&Node) -> bool {
+		let vals = self.node_lookup.remove(&vec2int(at)).unwrap();
+		let mut node = None;
+		for v in vals {
+			if pred(&self.node_storage[v]) {
+				node.replace(self.node_storage.remove(v).unwrap());
+			}
+		}
+		node.unwrap()
+	}
 }
 
 #[repr(C)]
@@ -42,11 +92,14 @@ struct Immediates {
 impl Canvas {
 	pub fn new(size: &Vec2, device: &wgpu::Device, surface_desc: &wgpu::SurfaceConfiguration) -> Self {
 		let canvas = CanvasInner::new(size, device, surface_desc);
-		let comps = Vec::new();
+		let comps = CompStorage::new();
+		let wires = Wires::new();
 
 		Self {
 			inner: canvas,
-			comps
+			comps,
+			wires,
+			nodes: NodeHandler::new(),
 		}
 	}
 
@@ -71,11 +124,7 @@ impl Canvas {
 				if let Some(_) = ui.begin_menu("Logic Gate") {
 					for asd in GateKind::iter() {
 						if ui.menu_item(format!("{}", asd.get_message().unwrap())) {
-							self.comps.push(
-								// Component::Gate(Gate::new(asd, self.inner.get_mouse(), self.inner.compid))
-								Gate::new(asd, self.inner.get_mouse(), self.inner.compid)
-							);
-							self.inner.compid += 1;
+							self.add_comp(asd);
 							self.inner.forget_mouse();
 						}
 					}
@@ -83,22 +132,26 @@ impl Canvas {
 			}
 		}
 
-		for c in &mut self.comps {
-			c.draw(&mut self.inner, ui);
+		for (_, c) in &mut self.comps {
+			c.draw(&mut self.inner, &mut self.wires, &mut self.nodes, ui);
 		}
 
-		// Move requestek feldolgozása
-		'turip: for i in 0..self.comps.len() {
-			let request = self.comps[i].move_request.take();
+		self.wires.draw(&self.inner, &ui.get_window_draw_list());
+
+		let keys: Vec<_> = self.comps.iter().map(|(idx, _)| idx).collect();
+
+		'turip: for k in &keys {
+			let request = self.comps[*k].move_request.take();
 
 			if let Some(newpos) = request {
-				for j in 0..self.comps.len() {
-					if i == j { continue; }
+				let a1 = newpos;
+				let a2 = a1 + self.comps[*k].kind.hitbox();
 
-					let a1 = newpos;
-					let b1 = self.comps[j].pos;
-					let a2 = a1 + self.comps[i].kind.hitbox();
-					let b2 = b1 + self.comps[j].kind.hitbox();
+				for k2 in &keys {
+					if k == k2 { continue; }
+
+					let b1 = self.comps[*k2].pos;
+					let b2 = b1 + self.comps[*k2].kind.hitbox();
 
 					if a1.x < b2.x && a2.x > b1.x &&
 					a1.y < b2.y && a2.y > b1.y {
@@ -106,144 +159,37 @@ impl Canvas {
 					}
 				}
 
-				self.comps[i].pos = newpos;
+				self.comps[*k].pos = newpos;
 			}
 		}
-	}
-}
 
-impl CanvasInner {
-	const GRID_SPACING: f32 = 16.0;
+		// Debug: Node-ok rajzolása
+		for (_, n) in &self.nodes.node_storage {
+			// assert_eq!(self.nodes.node_lookup[&vec2int(n.pos)][0], idx);
+			
+			let draw_list = ui.get_window_draw_list();
 
-	pub fn new(size: &Vec2, device: &wgpu::Device, surface_desc: &wgpu::SurfaceConfiguration) -> Self {
-		let pipeline_layout =
-			device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
-				label: Some("Render Pipeline Layout"),
-				bind_group_layouts: &[],
-				immediate_size: size_of::<Immediates>() as u32,
-			});
+			let mut pos = n.pos;
 
-		let shader = device.create_shader_module(ShaderModuleDescriptor {
-			label: Some("turiplogic vertex shader"),
-			source: wgpu::ShaderSource::Wgsl(fs::read_to_string("shader.wgsl").expect("shader.wgsl not found!").into()),
-		});
+			// hahah ck xdddddddd cigán ykruva xd
+			if let Some(ck) = &n.owner {
+				if let NodeOwner::Comp(c) = ck {
+					pos += self.comps[*c].pos;
+				}
+			}
 
-		let pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
-			label: Some("Render Pipeline"),
-			layout: Some(&pipeline_layout),
-			vertex: wgpu::VertexState {
-				module: &shader,
-				entry_point: Some("vs_main"),
-				buffers: &[],
-				compilation_options: wgpu::PipelineCompilationOptions::default(),
-			},
-			fragment: Some(wgpu::FragmentState {
-				module: &shader,
-				entry_point: Some("fs_main"),
-				targets: &[Some(wgpu::ColorTargetState {
-					format: surface_desc.format,
-					blend: Some(wgpu::BlendState::REPLACE),
-					write_mask: wgpu::ColorWrites::ALL,
-				})],
-				compilation_options: wgpu::PipelineCompilationOptions::default(),
-			}),
-			primitive: wgpu::PrimitiveState {
-				topology: wgpu::PrimitiveTopology::TriangleList,
-				strip_index_format: None,
-				front_face: wgpu::FrontFace::Ccw,
-				cull_mode: Some(wgpu::Face::Back),
-				polygon_mode: wgpu::PolygonMode::Fill,
-				unclipped_depth: false,
-				conservative: false,
-			},
-			depth_stencil: None,
-			multisample: wgpu::MultisampleState {
-				count: 1,
-				mask: !0,
-				alpha_to_coverage_enabled: false,
-			},
-			multiview_mask: None,
-			cache: None,
-		});
-
-		Self {
-			size: Vec2::new(size.x, size.y),
-			pan: Vec2::default(),
-			zoom: 1.0,
-			pipeline,
-			lastmouse: None,
-			compid: 0,
-			grab_mouse_offset: None
+			draw_list.add_circle(self.inner.canvas_to_window(pos), config::NODE_RADIUS, 0xff00bfff)
+				.filled(true)
+				.build();
 		}
 	}
 
-	fn record_mouse(&mut self, pos: &Vec2) {
-		if self.lastmouse.is_none() { self.lastmouse.replace(self.window_to_canvas(*pos)); }
-	}
-
-	fn get_mouse(&self) -> Vec2 { self.lastmouse.unwrap() }
-
-	fn forget_mouse(&mut self) {
-		self.lastmouse.take();
-	}
-
-	fn canvas_to_window(&self, pos: Vec2) -> Vec2 {
-		let center = self.size / 2.0;
-
-		// Ennyi grid koordinátával van elcsúsztatva a canvas
-		let pancoord = self.pan / CanvasInner::GRID_SPACING;
-
-		let grid_spacing_zoom = CanvasInner::GRID_SPACING * self.zoom;
-
-		return (pos + pancoord) * grid_spacing_zoom + center;
-	}
-
-	fn window_to_canvas(&self, pos: Vec2) -> Vec2 {
-		let center = self.size / 2.0;
-
-		// Ennyivel van elcsúszva a grid, tehát a pontok amikhez a koordinátát snappelni kell
-		let panoffset = self.pan % CanvasInner::GRID_SPACING;
-
-		// Ennyi grid koordinátával van elcsúsztatva a canvas
-		let pancoord = self.pan / CanvasInner::GRID_SPACING;
-
-		let grid_spacing_zoom = CanvasInner::GRID_SPACING * self.zoom;
-
-		return ((((pos - center) - panoffset) / grid_spacing_zoom) - pancoord).round();
-	}
-
-	fn canvas_to_window_size(&self, pos: Vec2, size: Vec2) -> Vec2 {
-		(self.canvas_to_window(pos) - self.canvas_to_window(pos + size)).abs()
-	}
-
-	pub fn draw_grid(&self, rpass: &mut wgpu::RenderPass) {
-		if self.zoom < 0.35 { return; }
-
-		let center = self.size / 2.0;
-
-		let gsz = CanvasInner::GRID_SPACING * self.zoom;
-
-		let mut remainder = (((center / gsz) - (center / gsz).floor()) * gsz
-							+ ((self.pan * self.zoom) % gsz) + gsz) % gsz;
-
-		// Normalizálás: Ablakkoordináták -> NDC
-		remainder = 2.0 * remainder / self.size - 1.0;
-		remainder.y = -remainder.y;
-		let step = gsz * 2.0 / self.size;
-
-		let num_cols = (self.size.x / gsz) as u32 + 1;
-
-		let turip = Immediates {
-			start: remainder.into(),
-			step: step.into(),
-			num_cols,
-			zoom: self.zoom,
-		};
-
-		rpass.set_pipeline(&self.pipeline);
-		rpass.set_immediates(0, bytemuck::bytes_of(&turip));
-		let cols = self.size.x / gsz + 1.0;
-		let rows = self.size.y / gsz + 1.0;
-		rpass.draw(0..6, 0..(cols*rows) as u32);
+	fn add_comp(&mut self, asd: GateKind) {
+		let c = Gate::new(asd, self.inner.get_mouse(), self.inner.compid, &mut self.nodes);
+		let idx = self.comps.insert(c);
+		for n in &mut self.comps[idx].nodes {
+			self.nodes.node_storage[*n].owner.replace(NodeOwner::Comp(idx));
+		}
+		self.inner.compid += 1;
 	}
 }

@@ -1,13 +1,85 @@
-use std::time::Instant;
+use crate::{canvas::{CanvasInner, NodeOwner, NodeHandler, NodeKey, Vec2, wires::{Wire, Wires}}, config};
 
-use crate::canvas::{CanvasInner, Vec2};
+#[derive(PartialEq)]
+pub struct Node {
+	pub pos: Vec2,
+	pub owner: Option<NodeOwner>,
+}
 
-struct Node {
+impl Node {
+	fn draw(&self, c: &Gate, nidx: usize, inner: &mut CanvasInner, draw_list: &imgui::DrawListMut, ui: &imgui::Ui)
+	-> (Option<Wire>, Option<Wire>) {
+		let pos = c.pos + self.pos;
 
+		draw_list.add_circle(inner.canvas_to_window(pos), config::NODE_RADIUS, 0xffffffff).filled(true).build();
+
+		let offset = config::NODE_HITBOX / 2.0;
+
+		ui.set_cursor_pos(inner.canvas_to_window(pos - offset));
+
+		ui.invisible_button(format!("comp{}input{}", c.id, nidx), inner.canvas_to_window_size(pos - offset, config::NODE_HITBOX));
+
+		let mut w1: Wire = Wire::skeleton(Vec2::new(0.0, 0.0), Vec2::new(0.0, 0.0));
+		let mut w2: Wire = Wire::skeleton(Vec2::new(0.0, 0.0), Vec2::new(0.0, 0.0));
+
+		let active = ui.is_item_active();
+		let deactivated = ui.is_item_deactivated();
+
+		if active {
+			draw_list.add_rect(inner.canvas_to_window(pos - offset), inner.canvas_to_window(pos - offset) + inner.canvas_to_window_size(pos - offset, config::NODE_HITBOX), 0xffffffff)
+				.build();
+		}
+
+		if active || deactivated {
+			let from = pos;
+			let to = inner.window_to_canvas(ui.io().mouse_pos.into());
+			let vec = to - from;
+
+			// 0 ha vízszintesen kezdte el húzni a felhasználó,
+			// 1 ha függőlegesen
+			let len = (to - from).length();
+			if len == inner.zoom {
+				inner.wire_horiz = (to - from).x.abs() != 0.0;
+			}
+
+			if inner.wire_horiz {
+				// Vízszintes először
+				w1 = Wire::skeleton(from, Vec2::new(to.x, from.y));
+				w2 = Wire::skeleton(Vec2::new(to.x, from.y), to);
+
+				if vec.x == 0.0 {
+					inner.wire_horiz = !inner.wire_horiz;
+				}
+			} else {
+				// Függőleges először
+				w1 = Wire::skeleton(from, Vec2::new(from.x, to.y));
+				w2 = Wire::skeleton(Vec2::new(from.x, to.y), to);
+
+				if vec.y == 0.0 {
+					inner.wire_horiz = !inner.wire_horiz;
+				}
+			}
+		}
+
+		if active {
+			w1.draw(inner, draw_list, None);
+			w2.draw(inner, draw_list, None);
+		}
+
+		let mut ret = (None, None);
+		if deactivated {
+			// println!("w1 {:?} w2 {:?}", w1, w2);
+			// if w1.start != w1.end { wires.try_add(w1, nodes); }
+			// if w2.start != w2.end { wires.try_add(w2, nodes); }
+			if w1.start != w1.end { ret.0.replace(w1); }
+			if w2.start != w2.end { ret.1.replace(w2); }
+		}
+		return ret;
+	}
 }
 
 #[allow(unused)]
-#[derive(strum::EnumIter, strum::EnumMessage, Debug)]
+#[derive(strum::EnumIter, strum::EnumMessage, Debug, PartialEq)]
 pub enum GateKind {
 	#[strum(message = "AND Gate")]	AndGate,
 	#[strum(message = "OR Gate")]	OrGate,
@@ -18,7 +90,22 @@ pub enum GateKind {
 impl GateKind {
 	pub const fn hitbox(&self) -> Vec2 {
 		match self {
-			GateKind::AndGate => Vec2::new(4.67, 4.0),
+			GateKind::AndGate => Vec2::new(3.67, 4.0),
+			GateKind::OrGate => todo!(),
+			GateKind::NandGate => todo!(),
+			GateKind::NorGate => todo!(),
+		}
+	}
+
+	pub const fn nodes(&self) -> [Node; 3] {
+		match self {
+			GateKind::AndGate => {
+				[
+					Node { pos: Vec2::new(0.0, 1.0), owner: None },
+					Node { pos: Vec2::new(0.0, 3.0), owner: None },
+					Node { pos: Vec2::new(4.0, 2.0), owner: None },
+				]
+			},
 			GateKind::OrGate => todo!(),
 			GateKind::NandGate => todo!(),
 			GateKind::NorGate => todo!(),
@@ -26,42 +113,36 @@ impl GateKind {
 	}
 }
 
+#[derive(PartialEq)]
 #[allow(unused)]
 pub struct Gate {
 	pub kind: GateKind,
 	pub pos: Vec2,
-		inputs: Vec<Node>,
-		output: Node,
+	pub nodes: [NodeKey; 3],
 	pub id: u64,
 	pub move_request: Option<Vec2>
 }
 
 impl Gate {
-	pub fn new(kind: GateKind, pos: Vec2, id: u64) -> Self {
-		let inputs = vec![
-			Node {  },
-			Node {  },
-		];
+	pub fn new(kind: GateKind, pos: Vec2, id: u64, nodes: &mut NodeHandler) -> Self {
+		let nodes = kind.nodes().map(|v| { nodes.add_node(v) });
 
-		let output = Node {
-
-		};
-
-		Gate {
+		Self {
 			kind,
 			pos,
-			inputs,
-			output,
+			nodes,
 			id,
 			move_request: None,
 		}
 	}
 
-	pub fn draw(&mut self, canvas: &mut CanvasInner, ui: &imgui::Ui) {
+	pub fn draw(&mut self, canvas: &mut CanvasInner, wires: &mut Wires, nodes: &mut NodeHandler, ui: &imgui::Ui) {
 		let draw_list = &ui.get_window_draw_list();
 
 		// A görbe valamiért lejjebb van mint kéne, ez szemre belövi
 		let curve_y_offset: f32 = -0.03 / canvas.zoom;
+
+		// draw_list.add_circle(canvas.canvas_to_window(self.pos), 10.0, 0xffffffff).build();
 
 		match self.kind {
 			GateKind::AndGate => {
@@ -71,25 +152,33 @@ impl Gate {
 					canvas.canvas_to_window(self.pos + Vec2::new(4.67, 0.0 - curve_y_offset)),
 					canvas.canvas_to_window(self.pos + Vec2::new(2.00, 0.0 - curve_y_offset)),
 					0xffffffff
-				).build();
+				)
+					.thickness(config::COMPONENT_THICKNESS)
+					.build();
 
 				draw_list.add_line(
 					canvas.canvas_to_window(self.pos + Vec2::new(0.0, 4.0)),
 					canvas.canvas_to_window(self.pos + Vec2::new(2.0, 4.0)),
 					0xffffffff
-				).build();
+				)
+					.thickness(config::COMPONENT_THICKNESS)
+					.build();
 
 				draw_list.add_line(
 					canvas.canvas_to_window(self.pos + Vec2::new(0.0, 0.0)),
 					canvas.canvas_to_window(self.pos + Vec2::new(2.0, 0.0)),
 					0xffffffff
-				).build();
+				)
+					.thickness(config::COMPONENT_THICKNESS)
+					.build();
 
 				draw_list.add_line(
 					canvas.canvas_to_window(self.pos + Vec2::new(0.0, 4.0)),
 					canvas.canvas_to_window(self.pos + Vec2::new(0.0, 0.0)),
 					0xffffffff
-				).build();
+				)
+					.thickness(config::COMPONENT_THICKNESS)
+					.build();
 			},
 			GateKind::OrGate => {
 
@@ -102,7 +191,12 @@ impl Gate {
 			},
 		}
 
-		// draw_list.add_rect(canvas.canvas_to_window(self.pos), canvas.canvas_to_window(self.pos + self.kind.hitbox()), 0x80808080).build();
+		for (nidx, n) in self.nodes.iter().enumerate() {
+			let tobeadded = nodes.node_storage[*n].draw(self, nidx, canvas, draw_list, ui);
+			if let Some(w) = tobeadded.0 { wires.try_add(w, nodes); }
+			if let Some(w) = tobeadded.1 { wires.try_add(w, nodes); }
+			// n.draw(self, nidx, canvas, wires, draw_list, ui);
+		}
 
 		ui.set_cursor_pos(canvas.canvas_to_window(self.pos));
 		ui.invisible_button(format!("comp{}", self.id), canvas.canvas_to_window_size(self.pos, self.kind.hitbox()));
@@ -125,17 +219,3 @@ impl Gate {
 
 	}
 }
-
-// pub enum Component {
-// 	Gate(Gate)
-// }
-
-// impl Component {
-// 	pub fn draw(&mut self, canvas: &mut CanvasInner, ui: &imgui::Ui) {
-// 		match self {
-// 			Component::Gate(gate) => {
-// 				gate.draw(canvas, ui);
-// 			},
-// 		}
-// 	}
-// }
