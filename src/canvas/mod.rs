@@ -1,4 +1,4 @@
-use std::{collections::HashMap};
+use std::{collections::HashMap, fmt::{Debug}};
 
 use glam::IVec2;
 use strum::{EnumMessage, IntoEnumIterator};
@@ -21,7 +21,7 @@ pub type CompKey = generational_arena::Index;
 pub type WireStorage = generational_arena::Arena<Wire>;
 pub type WireKey = generational_arena::Index;
 
-#[derive(PartialEq, Clone, Copy)]
+#[derive(PartialEq, Clone, Copy, Debug)]
 pub enum NodeOwner {
 	Wire(WireKey),
 	Comp(CompKey),
@@ -68,14 +68,16 @@ impl NodeHandler {
 
 	pub fn remove_node(&mut self, at: Vec2, owner: NodeOwner) {
 		let vals = self.node_lookup.get_mut(&vec2int(at)).unwrap();
-		
+
 		// Az extract_if eltávolítja az adott NodeKey-t a HashMap vektorából,
 		// a closure-ön belül pedig a NodeStorage Arénából is kiszedem
 		
-		let _ = vals.extract_if(.., |e| {
+		vals.retain_mut(|e| {
 			let remove = *self.node_storage[*e].owner.as_ref().unwrap() == owner;
-			if remove { self.node_storage.remove(*e); }
-			remove
+			if remove {
+				self.node_storage.remove(*e);
+			}
+			!remove
 		});
 
 		// Ha ez volt az ujtolsó Node ezen a koordinátán, akkor
@@ -88,10 +90,11 @@ impl NodeHandler {
 	pub fn move_node(&mut self, nidx: NodeKey, by: Vec2, owner: NodeOwner) {
 		let oldpos = self.node_storage[nidx].pos;
 		let newpos = oldpos + by;
+		let k = vec2int(oldpos);
 
 		// Koordináták frissítése a HashMap-ben:
-		// 1. ki kell venni a releváns NodeKey-eket az adott koordinátából
-		let mut iter = self.node_lookup.get_mut(&vec2int(oldpos)).unwrap().extract_if(.., |v| {
+		// 1.1. ki kell venni a releváns NodeKey-eket az adott koordinátából
+		let mut iter = self.node_lookup.get_mut(&k).unwrap().extract_if(.., |v| {
 			self.node_storage[*v].owner == Some(owner)
 		});
 		let node = iter.next().unwrap();
@@ -99,6 +102,11 @@ impl NodeHandler {
 		assert!(iter.next().is_none());
 
 		drop(iter);
+
+		// 1.2. ha nem maradt másik Node akkor a Vektor felszabadításra kerül
+		if self.node_lookup.get_mut(&k).unwrap().len() == 0 {
+			self.node_lookup.remove(&k);
+		}
 
 		// 2. vissza kell tenni az új koordinátára a kivett értékeket
 		self.node_lookup.entry(vec2int(newpos)).and_modify(|nodekeys| {
@@ -152,6 +160,8 @@ impl Canvas {
 
 		ui.text(format!("FPS: {:.2} ({:.2} ms)", 1.0 / io.delta_time, io.delta_time));
 		ui.text(format!("zoom: {}", self.inner.zoom));
+		let pos = self.inner.window_to_canvas(ui.io().mouse_pos.into());
+		ui.text(format!("mouse ({}, {})", pos.x, pos.y));
 
 		if let Some(_) = ui.begin_popup_context_window() {
 			self.inner.record_mouse(&io.mouse_pos.into());
@@ -169,10 +179,10 @@ impl Canvas {
 		}
 
 		for (_, c) in &mut self.comps {
-			c.draw(&mut self.inner, &mut self.wires, &mut self.nodes, ui);
+			c.draw(&mut self.inner, ui);
 		}
 
-		self.wires.draw(&self.inner, &ui.get_window_draw_list());
+		self.wires.draw(&mut self.inner, ui);
 
 		let keys: Vec<_> = self.comps.iter().map(|(idx, _)| idx).collect();
 
@@ -196,9 +206,20 @@ impl Canvas {
 				}
 
 				self.comps[*k].move_to(newpos, &mut self.nodes, *k);
-				// self.comps[*k].pos = newpos;
 			}
 		}
+
+		// Node-ok megrajzolása (minden koordináta első Node-ja)
+		let mut newwires = Vec::new();
+		for (_, node) in &self.nodes.node_lookup {
+			let nodeidx = node[0];
+			let node = &self.nodes.node_storage[nodeidx];
+
+			let tobeadded = node.draw(nodeidx, &mut self.inner, ui);
+			if let Some(w) = tobeadded.0 { newwires.push(w); }
+			if let Some(w) = tobeadded.1 { newwires.push(w); }
+		}
+		for w in newwires { self.wires.try_add(w, &mut self.nodes); }
 
 		// Debug: Node-ok rajzolása
 		for (_, n) in &self.nodes.node_storage {
@@ -226,5 +247,17 @@ impl Canvas {
 			self.nodes.node_storage[*n].owner.replace(NodeOwner::Comp(idx));
 		}
 		self.inner.compid += 1;
+	}
+}
+
+impl Debug for NodeHandler {
+	fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+		// f.debug_struct("NodeHandler").field("node_storage", &self.node_storage).field("node_lookup", &self.node_lookup).finish()
+		writeln!(f, "Storage:").unwrap();
+		for s in &self.node_storage {
+			writeln!(f, "{:?}", s.1).unwrap();
+		}
+
+		Ok(())
 	}
 }

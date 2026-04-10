@@ -1,3 +1,4 @@
+use imgui::Ui;
 use palette::FromColor;
 
 use crate::{canvas::{CanvasInner, NodeHandler, NodeKey, NodeOwner, Vec2, WireKey, WireStorage, component::Node}, config};
@@ -21,10 +22,6 @@ impl Wire {
 	}
 
 	pub fn overwrite(&mut self, start: Vec2, end: Vec2, nodes: &mut NodeHandler, oldidx: WireKey) {
-		// if nodes.count_nodes(self.start) > 1 {
-			
-		// }
-
 		nodes.remove_node(self.start, NodeOwner::Wire(oldidx));
 		nodes.remove_node(self.end, NodeOwner::Wire(oldidx));
 
@@ -42,6 +39,9 @@ impl Wire {
 	}
 
 	pub fn touches(&self, p: Vec2) -> bool {
+		if self.start == p { return false; }
+		if self.end == p { return false; }
+
 		let v = self.end - self.start;
 		let w = p - self.start;
 
@@ -57,6 +57,24 @@ impl Wire {
 
 		true
 	}
+
+	// Megfelezi magát, és egy új vezeték koordinátáit adja vissza
+	pub fn split(&mut self, at: Vec2) -> Wire {
+		assert!(self.touches(at));
+		assert!(self.start != at);
+		assert!(self.end != at);
+
+		let oldend = self.end;
+
+		self.end = at;
+
+		Wire {
+			start: at,
+			end: oldend,
+			startnode: None,
+			endnode: None
+		}
+	}
 }
 
 pub struct Wires {
@@ -70,7 +88,15 @@ impl Wires {
 		}
 	}
 
-	pub fn draw(&self, canvas: &CanvasInner, draw_list: &imgui::DrawListMut) {
+	fn add(&mut self, start: Vec2, end: Vec2, nodes: &mut NodeHandler) -> WireKey {
+		let wire = self.wires.insert(Wire::skeleton(start, end));
+		self.wires[wire].startnode.replace(nodes.add_node(Node { pos: start, owner: Some(NodeOwner::Wire(wire)) }));
+		self.wires[wire].endnode.replace(nodes.add_node(Node { pos: end, owner: Some(NodeOwner::Wire(wire)) }));
+		wire
+	}
+
+	pub fn draw(&mut self, canvas: &mut CanvasInner, ui: &Ui) {
+		let draw_list = ui.get_window_draw_list();
 		for (widx, w) in &self.wires {
 			let hsl: palette::Hsla = palette::Hsla::new(widx.into_raw_parts().0 as f32 / self.wires.len() as f32 * 360.0, 0.8, 0.5, 1.0);
 			let rgb: palette::Srgb<f32> = palette::Srgb::from_color(hsl);
@@ -82,68 +108,97 @@ impl Wires {
 
 			let argb: u32 = (a << 24) | (r << 16) | (g << 8) | b;
 
-			w.draw(canvas, draw_list, Some(argb));
+			w.draw(canvas, &draw_list, Some(argb));
 		}
 	}
 
 	pub fn try_add(&mut self, new: Wire, nodes: &mut NodeHandler) {
-		for (oldidx, old) in self.wires.iter_mut() {
-			let v1 = old.start - old.end;
-			let v2 = new.start - new.end;
-			let parallel = v1.perp_dot(v2).abs() < 1e-6;
+		let mut runanother = true;
+		let mut insert = true;
 
-			// Egy régi vezetékben elfér az új
-			if old.touches(new.start) && old.touches(new.end) {
-				return;
-			}
+		// Lehet hogy 1 v. 2 vezetéket meg kell felezni
+		let mut secondwire: Option<Wire> = None;
+		let mut thirdwire: Option<Wire> = None;
 
-			// Az új vezetékben elfér egy másik régebbi
-			if new.touches(old.start) && new.touches(old.end) {
-				old.overwrite(new.start, new.end, nodes, oldidx);
-				return;
-			}
+		'check: while runanother {
+			runanother = false;
 
-			// Az új vezetéket össze lehet vonni egy meglévővel (csak érintkeznek)
-			if parallel {
-				if old.start == new.start {
-					old.overwrite(new.end, old.end, nodes, oldidx);
-					return;
-				} else if old.start == new.end {
-					old.overwrite(old.end, new.start, nodes, oldidx);
-					return;
-				} else if old.end == new.start {
-					old.overwrite(old.start, new.end, nodes, oldidx);
-					return;
-				} else if old.end == new.end {
-					old.overwrite(old.start, new.start, nodes, oldidx);
-					return;
+			for (oldidx, old) in self.wires.iter_mut() {
+				let v1 = old.start - old.end;
+				let v2 = new.start - new.end;
+				let parallel = v1.perp_dot(v2).abs() < 1e-6;
+
+				// Egy régi vezetékben elfér az új (tehát az új nem kell)
+				if old.touches(new.start) && old.touches(new.end) {
+					insert = false;
+					break 'check;
 				}
 
-				// Az új vezetéket össze lehet vonni egy meglévővel (az egyik a másikból indul ki + párhuzamosak)
-				if old.touches(new.start) {
-					if new.touches(old.start) {
-						old.overwrite(old.end, new.end, nodes, oldidx);
-						return;
-					} else if new.touches(old.end) {
-						old.overwrite(old.start,new.end, nodes, oldidx);
+				// Az új vezetékben elfér egy másik régebbi
+				if new.touches(old.start) && new.touches(old.end) {
+					// A régi vezetéknek vannak csatlakozásai
+					if nodes.count_nodes(old.start) >= 2 || nodes.count_nodes(old.end) >= 2 {
+						// Ezt az esetet hagyjuk is a gecibe, én biztos nem fogom ezt kezelni
 						return;
 					}
-				} else if old.touches(new.end) {
-					if new.touches(old.start) {
-						old.overwrite(old.end, new.start, nodes, oldidx);
-						return;
-					} else if new.touches(old.end) {
-						old.overwrite(old.start, new.start, nodes, oldidx);
-						return;
+
+					old.overwrite(new.start, new.end, nodes, oldidx);
+					runanother = true; continue 'check;
+				}
+
+				// Az új vezetéket össze lehet vonni egy meglévővel (csak érintkeznek)
+				if parallel {
+					if nodes.count_nodes(old.start) == 1 {
+						if old.start == new.start {
+							old.overwrite(new.end, old.end, nodes, oldidx);
+							runanother = true; continue 'check;
+						} else if old.start == new.end {
+							old.overwrite(old.end, new.start, nodes, oldidx);
+							runanother = true; continue 'check;
+						} else if old.end == new.start {
+							old.overwrite(old.start, new.end, nodes, oldidx);
+							runanother = true; continue 'check;
+						} else if old.end == new.end {
+							old.overwrite(old.start, new.start, nodes, oldidx);
+							runanother = true; continue 'check;
+						}
+					}
+
+					// Az új vezetéket össze lehet vonni egy meglévővel (az egyik a másikból indul ki + párhuzamosak)
+					if old.touches(new.start) {
+						if new.touches(old.start) {
+							old.overwrite(old.end, new.end, nodes, oldidx);
+							runanother = true; continue 'check;
+						} else if new.touches(old.end) {
+							old.overwrite(old.start,new.end, nodes, oldidx);
+							runanother = true; continue 'check;
+						}
+					} else if old.touches(new.end) {
+						if new.touches(old.start) {
+							old.overwrite(old.end, new.start, nodes, oldidx);
+							runanother = true; continue 'check;
+						} else if new.touches(old.end) {
+							old.overwrite(old.start, new.start, nodes, oldidx);
+							runanother = true; continue 'check;
+						}
+					}
+				} else {
+					if old.touches(new.start) && old.start != new.start && old.end != new.start {
+						assert!(secondwire.is_none());
+						secondwire.replace(old.split(new.start));
+					} else if old.touches(new.end) && old.start != new.end && old.end != new.end {
+						assert!(thirdwire.is_none());
+						thirdwire.replace(old.split(new.end));
 					}
 				}
 			}
 		}
 
-		let start = new.start;
-		let end = new.end;
-		let wire = self.wires.insert(new);
-		self.wires[wire].startnode.replace(nodes.add_node(Node { pos: start, owner: Some(NodeOwner::Wire(wire)) }));
-		self.wires[wire].endnode.replace(nodes.add_node(Node { pos: end, owner: Some(NodeOwner::Wire(wire)) }));
+		if let Some(w) = secondwire { self.add(w.start, w.end, nodes); }
+		if let Some(w) = thirdwire { self.add(w.start, w.end, nodes); }
+
+		if insert {
+			self.add(new.start, new.end, nodes);
+		}
 	}
 }

@@ -1,21 +1,22 @@
-use crate::{canvas::{CanvasInner, CompKey, NodeHandler, NodeKey, NodeOwner, Vec2, wires::{Wire, Wires}}, config};
+use crate::{canvas::{CanvasInner, CompKey, NodeHandler, NodeKey, NodeOwner, Vec2, wires::Wire}, config};
 
-#[derive(PartialEq)]
+#[derive(PartialEq, Debug)]
 pub struct Node {
 	pub pos: Vec2,
 	pub owner: Option<NodeOwner>,
 }
 
 impl Node {
-	fn draw(&self, c: &Gate, nidx: usize, inner: &mut CanvasInner, draw_list: &imgui::DrawListMut, ui: &imgui::Ui)
+	pub fn draw(&self, nodeid: NodeKey, inner: &mut CanvasInner, ui: &imgui::Ui)
 	-> (Option<Wire>, Option<Wire>) {
+		let draw_list = ui.get_window_draw_list();
 		draw_list.add_circle(inner.canvas_to_window(self.pos), config::NODE_RADIUS, 0xffffffff).filled(true).build();
 
 		let offset = config::NODE_HITBOX / 2.0;
 
 		ui.set_cursor_pos(inner.canvas_to_window(self.pos - offset));
 
-		ui.invisible_button(format!("comp{}input{}", c.id, nidx), inner.canvas_to_window_size(self.pos - offset, config::NODE_HITBOX));
+		ui.invisible_button(format!("node{:?}", nodeid), inner.canvas_to_window_size(self.pos - offset, config::NODE_HITBOX));
 
 		let mut w1: Wire = Wire::skeleton(Vec2::new(0.0, 0.0), Vec2::new(0.0, 0.0));
 		let mut w2: Wire = Wire::skeleton(Vec2::new(0.0, 0.0), Vec2::new(0.0, 0.0));
@@ -60,8 +61,8 @@ impl Node {
 		}
 
 		if active {
-			w1.draw(inner, draw_list, None);
-			w2.draw(inner, draw_list, None);
+			w1.draw(inner, &draw_list, None);
+			w2.draw(inner, &draw_list, None);
 		}
 
 		let mut ret = (None, None);
@@ -115,7 +116,7 @@ pub struct Gate {
 	pub pos: Vec2,
 	pub nodes: [NodeKey; 3],
 	pub id: u64,
-	pub move_request: Option<Vec2>
+	pub move_request: Option<Vec2>,
 }
 
 impl Gate {
@@ -131,13 +132,11 @@ impl Gate {
 		}
 	}
 
-	pub fn draw(&mut self, canvas: &mut CanvasInner, wires: &mut Wires, nodes: &mut NodeHandler, ui: &imgui::Ui) {
-		let draw_list = &ui.get_window_draw_list();
+	pub fn draw(&mut self, canvas: &mut CanvasInner, ui: &imgui::Ui) {
+		let draw_list = ui.get_window_draw_list();
 
 		// A görbe valamiért lejjebb van mint kéne, ez szemre belövi
 		let curve_y_offset: f32 = -0.03 / canvas.zoom;
-
-		// draw_list.add_circle(canvas.canvas_to_window(self.pos), 10.0, 0xffffffff).build();
 
 		match self.kind {
 			GateKind::AndGate => {
@@ -186,13 +185,6 @@ impl Gate {
 			},
 		}
 
-		for (nidx, n) in self.nodes.iter().enumerate() {
-			let tobeadded = nodes.node_storage[*n].draw(self, nidx, canvas, draw_list, ui);
-			if let Some(w) = tobeadded.0 { wires.try_add(w, nodes); }
-			if let Some(w) = tobeadded.1 { wires.try_add(w, nodes); }
-			// n.draw(self, nidx, canvas, wires, draw_list, ui);
-		}
-
 		ui.set_cursor_pos(canvas.canvas_to_window(self.pos));
 		ui.invisible_button(format!("comp{}", self.id), canvas.canvas_to_window_size(self.pos, self.kind.hitbox()));
 		if ui.is_item_active() {
@@ -211,20 +203,6 @@ impl Gate {
 	}
 
 	pub fn move_to(&mut self, to: Vec2, nodes: &mut NodeHandler, cidx: CompKey) {
-		// Régi node-ok eltávolítása, újak hozzáadása
-		// Csak a HashMap-nél kell megváltoztatni a Key-t, az Arénában maradhat az Index
-
-		// // Koordináták frissítése a HashMap-ben
-		// for nidx in self.nodes {
-		// 	let oldpos = nodes.node_storage[nidx].pos;
-			
-		// }
-
-		// // Koordináták frissítése az Arénában
-		// for nidx in self.nodes {
-		// 	nodes.node_storage[nidx].pos += to - self.pos;
-		// }
-
 		for nidx in self.nodes {
 			nodes.move_node(nidx, to - self.pos, NodeOwner::Comp(cidx));
 		}
