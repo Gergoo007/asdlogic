@@ -8,6 +8,7 @@ pub struct CanvasInner {
 	pub compid: u64,
 	pub grab_mouse_offset: Option<(u64, Vec2)>,
 	pub wire_horiz: bool,
+	pub update_generation: u32,
 
 		size: Vec2,
 		pipeline: wgpu::RenderPipeline,
@@ -75,6 +76,7 @@ impl CanvasInner {
 			compid: 0,
 			grab_mouse_offset: None,
 			wire_horiz: false,
+			update_generation: 1,
 		}
 	}
 

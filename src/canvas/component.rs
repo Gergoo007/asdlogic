@@ -1,9 +1,11 @@
-use crate::{canvas::{CanvasInner, CompKey, NodeHandler, NodeKey, NodeOwner, Vec2, wires::Wire}, config};
+use crate::{canvas::{Canvas, CanvasInner, CompKey, CompStorage, NodeHandler, NodeKey, NodeLookup, NodeOwner, NodeStorage, Vec2, logic::LL, set_nodes, vec2int, wires::{Wire, Wires}}, config};
 
-#[derive(PartialEq, Debug)]
+#[derive(PartialEq, Debug, Clone)]
 pub struct Node {
 	pub pos: Vec2,
 	pub owner: Option<NodeOwner>,
+	pub logic_lvl: LL,
+	pub generation: u32,
 }
 
 impl Node {
@@ -76,52 +78,59 @@ impl Node {
 
 #[allow(unused)]
 #[derive(strum::EnumIter, strum::EnumMessage, Debug, PartialEq)]
-pub enum GateKind {
+pub enum CompKind {
 	#[strum(message = "AND Gate")]	AndGate,
 	#[strum(message = "OR Gate")]	OrGate,
 	#[strum(message = "NAND Gate")]	NandGate,
-	#[strum(message = "NOR Gate")]	NorGate,
+	#[strum(message = "NOR Gate")]	XorGate,
+	#[strum(message = "Input")]		Input { state: bool },
 }
 
-impl GateKind {
+impl CompKind {
 	pub const fn hitbox(&self) -> Vec2 {
 		match self {
-			GateKind::AndGate => Vec2::new(3.67, 4.0),
-			GateKind::OrGate => todo!(),
-			GateKind::NandGate => todo!(),
-			GateKind::NorGate => todo!(),
+			CompKind::AndGate => Vec2::new(4.0, 4.0),
+			CompKind::OrGate => todo!(),
+			CompKind::NandGate => todo!(),
+			CompKind::XorGate => todo!(),
+			CompKind::Input { state: _ } => Vec2::new(2.0, 2.0),
 		}
 	}
 
-	pub const fn nodes(&self) -> [Node; 3] {
+	// FONTOS: az outputok jönnek először
+	pub fn nodes(&self) -> Vec<Node> {
 		match self {
-			GateKind::AndGate => {
-				[
-					Node { pos: Vec2::new(0.0, 1.0), owner: None },
-					Node { pos: Vec2::new(0.0, 3.0), owner: None },
-					Node { pos: Vec2::new(4.0, 2.0), owner: None },
+			CompKind::AndGate =>
+				vec![
+					Node { pos: Vec2::new(4.0, 2.0), owner: None, logic_lvl: LL::U, generation: 0, },
+					Node { pos: Vec2::new(0.0, 1.0), owner: None, logic_lvl: LL::U, generation: 0, },
+					Node { pos: Vec2::new(0.0, 3.0), owner: None, logic_lvl: LL::U, generation: 0, },
+				],
+			CompKind::OrGate => todo!(),
+			CompKind::NandGate => todo!(),
+			CompKind::XorGate => todo!(),
+			CompKind::Input { state: _ } =>
+				vec![
+					Node { pos: Vec2::new(2.0, 1.0), owner: None, logic_lvl: LL::L, generation: 0, },
 				]
-			},
-			GateKind::OrGate => todo!(),
-			GateKind::NandGate => todo!(),
-			GateKind::NorGate => todo!(),
 		}
 	}
 }
 
 #[derive(PartialEq)]
 #[allow(unused)]
-pub struct Gate {
-	pub kind: GateKind,
+pub struct Component {
+	pub kind: CompKind,
 	pub pos: Vec2,
-	pub nodes: [NodeKey; 3],
+	pub nodes: Vec<NodeKey>,
 	pub id: u64,
 	pub move_request: Option<Vec2>,
+	pub clicked_at: Option<Vec2>,
 }
 
-impl Gate {
-	pub fn new(kind: GateKind, pos: Vec2, id: u64, nodes: &mut NodeHandler) -> Self {
-		let nodes = kind.nodes().map(|mut v| { v.pos += pos; nodes.add_node(v) });
+impl Component {
+	pub fn new(kind: CompKind, pos: Vec2, id: u64, nodes: &mut NodeHandler) -> Self {
+		let nodes: Vec<NodeKey> = kind.nodes().iter().map(|v| { let mut copy = (*v).clone(); copy.pos += pos; nodes.add_node(copy) }).collect();
 
 		Self {
 			kind,
@@ -129,17 +138,20 @@ impl Gate {
 			nodes,
 			id,
 			move_request: None,
+			clicked_at: None,
 		}
 	}
 
-	pub fn draw(&mut self, canvas: &mut CanvasInner, ui: &imgui::Ui) {
+	pub fn draw(&mut self, canvas: &mut CanvasInner, ui: &imgui::Ui) -> bool {
 		let draw_list = ui.get_window_draw_list();
 
 		// A görbe valamiért lejjebb van mint kéne, ez szemre belövi
 		let curve_y_offset: f32 = -0.03 / canvas.zoom;
 
+		let mut clicked = false;
+
 		match self.kind {
-			GateKind::AndGate => {
+			CompKind::AndGate => {
 				draw_list.add_bezier_curve(
 					canvas.canvas_to_window(self.pos + Vec2::new(2.00, 4.0 - curve_y_offset)),
 					canvas.canvas_to_window(self.pos + Vec2::new(4.67, 4.0 - curve_y_offset)),
@@ -174,43 +186,116 @@ impl Gate {
 					.thickness(config::COMPONENT_THICKNESS)
 					.build();
 			},
-			GateKind::OrGate => {
+			CompKind::OrGate => {
 
 			},
-			GateKind::NandGate => {
+			CompKind::NandGate => {
 
 			},
-			GateKind::NorGate => {
+			CompKind::XorGate => {
 
 			},
+			CompKind::Input { state: _ } => {
+				draw_list.add_line(
+					canvas.canvas_to_window(self.pos + Vec2::new(0.0, 0.0)),
+					canvas.canvas_to_window(self.pos + Vec2::new(2.0, 0.0)),
+					0xffffffff
+				)
+					.thickness(config::COMPONENT_THICKNESS)
+					.build();
+
+				draw_list.add_line(
+					canvas.canvas_to_window(self.pos + Vec2::new(2.0, 0.0)),
+					canvas.canvas_to_window(self.pos + Vec2::new(2.0, 2.0)),
+					0xffffffff
+				)
+					.thickness(config::COMPONENT_THICKNESS)
+					.build();
+
+				draw_list.add_line(
+					canvas.canvas_to_window(self.pos + Vec2::new(2.0, 2.0)),
+					canvas.canvas_to_window(self.pos + Vec2::new(0.0, 2.0)),
+					0xffffffff
+				)
+					.thickness(config::COMPONENT_THICKNESS)
+					.build();
+
+				draw_list.add_line(
+					canvas.canvas_to_window(self.pos + Vec2::new(0.0, 2.0)),
+					canvas.canvas_to_window(self.pos + Vec2::new(0.0, 0.0)),
+					0xffffffff
+				)
+					.thickness(config::COMPONENT_THICKNESS)
+					.build();
+			}
 		}
 
 		ui.set_cursor_pos(canvas.canvas_to_window(self.pos));
-		ui.invisible_button(format!("comp{}", self.id), canvas.canvas_to_window_size(self.pos, self.kind.hitbox()));
+
+		if ui.invisible_button(format!("comp{}", self.id), canvas.canvas_to_window_size(self.pos, self.kind.hitbox())) {
+			if let Some(pos) = self.clicked_at && pos.distance_squared(ui.io().mouse_pos.into()) <= config::CLICK_ALLOWANCE.sqrt() {
+				clicked = true;
+			}
+		}
+
 		if ui.is_item_active() {
+			if self.clicked_at.is_none() {
+				self.clicked_at.replace(ui.io().mouse_pos.into());
+			}
+
 			if canvas.grab_mouse_offset.is_none() {
 				canvas.grab_mouse_offset.replace((self.id, canvas.canvas_to_window(self.pos) - Vec2::from(ui.io().mouse_pos)));
 			}
 
 			self.move_request.replace(canvas.window_to_canvas(canvas.grab_mouse_offset.unwrap().1 + Vec2::from(ui.io().mouse_pos)));
 		} else {
+			self.clicked_at.take();
+
 			if let Some(turi) = canvas.grab_mouse_offset {
 				if turi.0 == self.id {
 					canvas.grab_mouse_offset.take();
 				}
 			}
 		}
+
+		clicked
 	}
 
 	pub fn move_to(&mut self, to: Vec2, nodes: &mut NodeHandler, cidx: CompKey) {
-		for nidx in self.nodes {
-			nodes.move_node(nidx, to - self.pos, NodeOwner::Comp(cidx));
+		for nidx in &self.nodes {
+			nodes.move_node(*nidx, to - self.pos, NodeOwner::Comp(cidx));
 		}
 
 		self.pos = to;
 	}
 
-	fn update(&mut self) {
+	pub fn on_click(&mut self) {
+		match &mut self.kind {
+			CompKind::Input { state } => {
+				*state = !*state;
+				// self.update(generation, &nodes.node_lookup, &mut nodes.node_storage, wires, comps);
+			},
+			_ => {}
+		}
+	}
 
+	pub fn update(&self, generation: u32, node_lookup: &NodeLookup, node_storage: &mut NodeStorage, wires: &Wires, comps: &CompStorage) {
+		// Kimenet kiszámítása a bemeneteknek megfelelően
+		match self.kind {
+			CompKind::AndGate => {
+				let mut value = node_storage[self.nodes[1]].logic_lvl;
+				for n in self.nodes.iter().skip(1) {
+					value &= node_storage[*n].logic_lvl;
+				}
+				set_nodes(node_lookup, node_storage, wires, comps, node_storage[self.nodes[0]].pos, generation, value);
+			},
+			CompKind::OrGate => todo!(),
+			CompKind::NandGate => todo!(),
+			CompKind::XorGate => todo!(),
+			CompKind::Input { state } => {
+				node_storage[self.nodes[0]].logic_lvl = state.into();
+				set_nodes(node_lookup, node_storage, wires, comps, node_storage[self.nodes[0]].pos, generation, state.into());
+			},
+		}
 	}
 }

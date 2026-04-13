@@ -3,11 +3,12 @@ use std::{collections::HashMap, fmt::{Debug}};
 use glam::IVec2;
 use strum::{EnumMessage, IntoEnumIterator};
 
-use crate::{canvas::{component::{Gate, GateKind, Node}, inner::CanvasInner, wires::{Wire, Wires}}, config};
+use crate::{canvas::{component::{CompKind, Component, Node}, inner::CanvasInner, logic::LL, wires::{Wire, Wires}}, config};
 
 mod component;
 mod wires;
 mod inner;
+mod logic;
 
 pub type Vec2 = glam::Vec2;
 
@@ -15,7 +16,7 @@ pub type NodeStorage = generational_arena::Arena<Node>;
 pub type NodeKey = generational_arena::Index;
 pub type NodeLookup = HashMap<IVec2, Vec<NodeKey>>;
 
-pub type CompStorage = generational_arena::Arena<Gate>;
+pub type CompStorage = generational_arena::Arena<Component>;
 pub type CompKey = generational_arena::Index;
 
 pub type WireStorage = generational_arena::Arena<Wire>;
@@ -31,10 +32,6 @@ fn vec2int(float: Vec2) -> IVec2 {
 	IVec2 { x: float.x as i32, y: float.y as i32 }
 }
 
-fn vec2float(int: Vec2) -> Vec2 {
-	Vec2 { x: int.x as f32, y: int.y as f32 }
-}
-
 pub struct Canvas {
 	pub inner: CanvasInner,
 	pub comps: CompStorage,
@@ -45,6 +42,37 @@ pub struct Canvas {
 pub struct NodeHandler {
 	pub node_storage: NodeStorage,
 	pub node_lookup: NodeLookup,
+}
+
+pub fn set_nodes(node_lookup: &NodeLookup, node_storage: &mut NodeStorage, wires: &Wires, comps: &CompStorage, at: Vec2, generation: u32, ll: LL) {
+	for node in &node_lookup[&vec2int(at)] {
+		let k = *node;
+		let node = &mut node_storage[k];
+
+		if node.generation == generation {
+			if node.logic_lvl != ll {
+				eprintln!("Short circuit!");
+			}
+			return;
+		}
+
+		node.logic_lvl = ll;
+		node.generation = generation;
+
+		if let Some(NodeOwner::Wire(w)) = node.owner {
+			// Ha vezeték, akkor a másik node-ot is be kell állítani
+			if k == wires.wires[w].startnode.unwrap() {
+				set_nodes(node_lookup, node_storage, wires, comps, wires.wires[w].end, generation, ll);
+			} else if k == wires.wires[w].endnode.unwrap() {
+				set_nodes(node_lookup, node_storage, wires, comps, wires.wires[w].start, generation, ll);
+			} else {
+				unreachable!("he????");
+			}
+		} else if let Some(NodeOwner::Comp(c)) = node.owner {
+			// Ha pedig komponens, akkor update-elni kell azt
+			comps[c].update(generation, node_lookup, node_storage, wires, comps);
+		}
+	}
 }
 
 impl NodeHandler {
@@ -66,8 +94,9 @@ impl NodeHandler {
 		self.node_lookup[&vec2int(at)].len()
 	}
 
-	pub fn remove_node(&mut self, at: Vec2, owner: NodeOwner) {
+	pub fn remove_node(&mut self, at: Vec2, owner: NodeOwner) -> Node {
 		let vals = self.node_lookup.get_mut(&vec2int(at)).unwrap();
+		let mut node = None;
 
 		// Az extract_if eltávolítja az adott NodeKey-t a HashMap vektorából,
 		// a closure-ön belül pedig a NodeStorage Arénából is kiszedem
@@ -75,7 +104,7 @@ impl NodeHandler {
 		vals.retain_mut(|e| {
 			let remove = *self.node_storage[*e].owner.as_ref().unwrap() == owner;
 			if remove {
-				self.node_storage.remove(*e);
+				node = self.node_storage.remove(*e);
 			}
 			!remove
 		});
@@ -85,6 +114,8 @@ impl NodeHandler {
 		if vals.len() == 0 {
 			self.node_lookup.remove(&vec2int(at));
 		}
+
+		node.unwrap()
 	}
 
 	pub fn move_node(&mut self, nidx: NodeKey, by: Vec2, owner: NodeOwner) {
@@ -135,16 +166,24 @@ struct Immediates {
 
 impl Canvas {
 	pub fn new(size: &Vec2, device: &wgpu::Device, surface_desc: &wgpu::SurfaceConfiguration) -> Self {
-		let canvas = CanvasInner::new(size, device, surface_desc);
-		let comps = CompStorage::new();
-		let wires = Wires::new();
-
-		Self {
-			inner: canvas,
-			comps,
-			wires,
+		let mut s = Self {
+			inner: CanvasInner::new(size, device, surface_desc),
+			comps: CompStorage::new(),
+			wires: Wires::new(),
 			nodes: NodeHandler::new(),
-		}
+		};
+
+		s.add_comp(CompKind::AndGate, Vec2::new(0.0, 0.0));
+
+		s.wires.try_add(Wire { start: Vec2::new(0.0, 1.0), end: Vec2::new(-5.0, 1.0), startnode: None, endnode: None }, &mut s.nodes);
+		s.add_comp(CompKind::Input { state: false }, Vec2::new(-7.0, 0.0));
+
+		s.wires.try_add(Wire { start: Vec2::new(0.0, 3.0), end: Vec2::new(-5.0, 3.0), startnode: None, endnode: None }, &mut s.nodes);
+		s.add_comp(CompKind::Input { state: false }, Vec2::new(-7.0, 2.0));
+
+		s.wires.try_add(Wire { start: Vec2::new(4.0, 2.0), end: Vec2::new(8.0, 2.0), startnode: None, endnode: None }, &mut s.nodes);
+
+		s
 	}
 
 	pub fn draw(&mut self, ui: &imgui::Ui) {
@@ -168,9 +207,9 @@ impl Canvas {
 
 			if let Some(_) = ui.begin_menu("Spawn") {
 				if let Some(_) = ui.begin_menu("Logic Gate") {
-					for asd in GateKind::iter() {
+					for asd in CompKind::iter() {
 						if ui.menu_item(format!("{}", asd.get_message().unwrap())) {
-							self.add_comp(asd);
+							self.add_comp(asd, self.inner.get_mouse());
 							self.inner.forget_mouse();
 						}
 					}
@@ -178,11 +217,16 @@ impl Canvas {
 			}
 		}
 
-		for (_, c) in &mut self.comps {
-			c.draw(&mut self.inner, ui);
+		let keys: Vec<_> = self.comps.iter().map(|kv| kv.0).collect();
+		for i in keys {
+			if self.comps.get_mut(i).unwrap().draw(&mut self.inner, ui) {
+				self.comps.get_mut(i).unwrap().on_click();
+				self.comps[i].update(self.inner.update_generation, &self.nodes.node_lookup, &mut self.nodes.node_storage, &self.wires, &self.comps);
+				self.inner.update_generation += 1;
+			}
 		}
 
-		self.wires.draw(&mut self.inner, ui);
+		self.wires.draw(&mut self.inner, ui, &self.nodes);
 
 		let keys: Vec<_> = self.comps.iter().map(|(idx, _)| idx).collect();
 
@@ -223,25 +267,16 @@ impl Canvas {
 
 		// Debug: Node-ok rajzolása
 		for (_, n) in &self.nodes.node_storage {
-			// assert_eq!(self.nodes.node_lookup[&vec2int(n.pos)][0], idx);
-			
 			let draw_list = ui.get_window_draw_list();
 
-			// hahah ck xdddddddd cigán ykruva xd
-			// if let Some(ck) = &n.owner {
-			// 	if let NodeOwner::Comp(c) = ck {
-			// 		pos += self.comps[*c].pos;
-			// 	}
-			// }
-
-			draw_list.add_circle(self.inner.canvas_to_window(n.pos), config::NODE_RADIUS, 0xff00bfff)
+			draw_list.add_circle(self.inner.canvas_to_window(n.pos), config::NODE_RADIUS, n.logic_lvl.to_color())
 				.filled(true)
 				.build();
 		}
 	}
 
-	fn add_comp(&mut self, asd: GateKind) {
-		let c = Gate::new(asd, self.inner.get_mouse(), self.inner.compid, &mut self.nodes);
+	fn add_comp(&mut self, asd: CompKind, at: Vec2) {
+		let c = Component::new(asd, at, self.inner.compid, &mut self.nodes);
 		let idx = self.comps.insert(c);
 		for n in &mut self.comps[idx].nodes {
 			self.nodes.node_storage[*n].owner.replace(NodeOwner::Comp(idx));

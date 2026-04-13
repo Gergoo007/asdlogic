@@ -1,7 +1,6 @@
 use imgui::Ui;
-use palette::FromColor;
 
-use crate::{canvas::{CanvasInner, NodeHandler, NodeKey, NodeOwner, Vec2, WireKey, WireStorage, component::Node}, config};
+use crate::{canvas::{CanvasInner, NodeHandler, NodeKey, NodeOwner, Vec2, WireKey, WireStorage, component::{Node}, logic::LL}, config};
 
 #[derive(Debug)]
 pub struct Wire {
@@ -22,14 +21,14 @@ impl Wire {
 	}
 
 	pub fn overwrite(&mut self, start: Vec2, end: Vec2, nodes: &mut NodeHandler, oldidx: WireKey) {
-		nodes.remove_node(self.start, NodeOwner::Wire(oldidx));
-		nodes.remove_node(self.end, NodeOwner::Wire(oldidx));
+		let node1 = nodes.remove_node(self.start, NodeOwner::Wire(oldidx));
+		let node2 = nodes.remove_node(self.end, NodeOwner::Wire(oldidx));
 
 		self.start = start;
 		self.end = end;
 
-		nodes.add_node(Node { pos: self.start, owner: Some(NodeOwner::Wire(oldidx)) });
-		nodes.add_node(Node { pos: self.end, owner: Some(NodeOwner::Wire(oldidx)) });
+		nodes.add_node(Node { pos: self.start, owner: Some(NodeOwner::Wire(oldidx)), ..node1 });
+		nodes.add_node(Node { pos: self.end, owner: Some(NodeOwner::Wire(oldidx)), ..node2 });
 	}
 
 	pub fn draw(&self, canvas: &CanvasInner, draw_list: &imgui::DrawListMut, color: Option<u32>) {
@@ -78,7 +77,7 @@ impl Wire {
 }
 
 pub struct Wires {
-	wires: WireStorage,
+	pub wires: WireStorage,
 }
 
 impl Wires {
@@ -90,23 +89,28 @@ impl Wires {
 
 	fn add(&mut self, start: Vec2, end: Vec2, nodes: &mut NodeHandler) -> WireKey {
 		let wire = self.wires.insert(Wire::skeleton(start, end));
-		self.wires[wire].startnode.replace(nodes.add_node(Node { pos: start, owner: Some(NodeOwner::Wire(wire)) }));
-		self.wires[wire].endnode.replace(nodes.add_node(Node { pos: end, owner: Some(NodeOwner::Wire(wire)) }));
+		self.wires[wire].startnode.replace(nodes.add_node(Node { pos: start, owner: Some(NodeOwner::Wire(wire)), logic_lvl: LL::U, generation: 0, }));
+		self.wires[wire].endnode.replace(nodes.add_node(Node { pos: end, owner: Some(NodeOwner::Wire(wire)), logic_lvl: LL::U, generation: 0, }));
 		wire
 	}
 
-	pub fn draw(&mut self, canvas: &mut CanvasInner, ui: &Ui) {
+	pub fn draw(&mut self, canvas: &mut CanvasInner, ui: &Ui, nodes: &NodeHandler) {
 		let draw_list = ui.get_window_draw_list();
-		for (widx, w) in &self.wires {
-			let hsl: palette::Hsla = palette::Hsla::new(widx.into_raw_parts().0 as f32 / self.wires.len() as f32 * 360.0, 0.8, 0.5, 1.0);
-			let rgb: palette::Srgb<f32> = palette::Srgb::from_color(hsl);
+		for (_, w) in &self.wires {
+			// let hsl: palette::Hsla = palette::Hsla::new(widx.into_raw_parts().0 as f32 / self.wires.len() as f32 * 360.0, 0.8, 0.5, 1.0);
+			// let rgb: palette::Srgb<f32> = palette::Srgb::from_color(hsl);
 
-			let r = (rgb.red	* 255.0) as u32;
-			let g = (rgb.green	* 255.0) as u32;
-			let b = (rgb.blue	* 255.0) as u32;
-			let a = (hsl.alpha	* 255.0) as u32;
+			// let r = (rgb.red	* 255.0) as u32;
+			// let g = (rgb.green	* 255.0) as u32;
+			// let b = (rgb.blue	* 255.0) as u32;
+			// let a = (hsl.alpha	* 255.0) as u32;
 
-			let argb: u32 = (a << 24) | (r << 16) | (g << 8) | b;
+			// let argb: u32 = (a << 24) | (r << 16) | (g << 8) | b;
+
+			debug_assert!(nodes.node_storage[w.startnode.unwrap()].logic_lvl == nodes.node_storage[w.endnode.unwrap()].logic_lvl);
+
+			let logic_lvl = &nodes.node_storage[w.startnode.unwrap()].logic_lvl;
+			let argb = logic_lvl.to_color();
 
 			w.draw(canvas, &draw_list, Some(argb));
 		}
