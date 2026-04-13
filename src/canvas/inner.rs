@@ -149,4 +149,10 @@ impl CanvasInner {
 		let rows = self.size.y / gsz + 1.0;
 		rpass.draw(0..6, 0..(cols*rows) as u32);
 	}
+
+	// newgen
+	pub fn newgen(&mut self) -> u32 {
+		self.update_generation += 1;
+		self.update_generation
+	}
 }

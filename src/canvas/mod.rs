@@ -118,7 +118,7 @@ impl NodeHandler {
 		node.unwrap()
 	}
 
-	pub fn move_node(&mut self, nidx: NodeKey, by: Vec2, owner: NodeOwner) {
+	pub fn move_node(&mut self, nidx: NodeKey, by: Vec2, owner: NodeOwner, wires: &Wires, comps: &CompStorage, generation: u32) {
 		let oldpos = self.node_storage[nidx].pos;
 		let newpos = oldpos + by;
 		let k = vec2int(oldpos);
@@ -146,6 +146,10 @@ impl NodeHandler {
 
 		// Koordináták frissítése az Arénában
 		self.node_storage[nidx].pos += by;
+
+		// Az esetleges új kapcsolatok feldolgozása
+		let ll = self.node_storage[nidx].logic_lvl;
+		set_nodes(&self.node_lookup, &mut self.node_storage, wires, comps, newpos, generation, ll);
 	}
 }
 
@@ -173,13 +177,19 @@ impl Canvas {
 			nodes: NodeHandler::new(),
 		};
 
-		s.add_comp(CompKind::AndGate, Vec2::new(0.0, 0.0));
+		let gener = s.inner.newgen();
+		s.add_comp(CompKind::OrGate, Vec2::new(0.0, -5.0), gener);
+
+		let gener = s.inner.newgen();
+		s.add_comp(CompKind::AndGate, Vec2::new(0.0, 0.0), gener);
 
 		s.wires.try_add(Wire { start: Vec2::new(0.0, 1.0), end: Vec2::new(-5.0, 1.0), startnode: None, endnode: None }, &mut s.nodes);
-		s.add_comp(CompKind::Input { state: false }, Vec2::new(-7.0, 0.0));
+		let gener = s.inner.newgen();
+		s.add_comp(CompKind::Input { state: false }, Vec2::new(-7.0, 0.0), gener);
 
 		s.wires.try_add(Wire { start: Vec2::new(0.0, 3.0), end: Vec2::new(-5.0, 3.0), startnode: None, endnode: None }, &mut s.nodes);
-		s.add_comp(CompKind::Input { state: false }, Vec2::new(-7.0, 2.0));
+		let gener = s.inner.newgen();
+		s.add_comp(CompKind::Input { state: false }, Vec2::new(-7.0, 2.0), gener);
 
 		s.wires.try_add(Wire { start: Vec2::new(4.0, 2.0), end: Vec2::new(8.0, 2.0), startnode: None, endnode: None }, &mut s.nodes);
 
@@ -209,13 +219,26 @@ impl Canvas {
 				if let Some(_) = ui.begin_menu("Logic Gate") {
 					for asd in CompKind::iter() {
 						if ui.menu_item(format!("{}", asd.get_message().unwrap())) {
-							self.add_comp(asd, self.inner.get_mouse());
+							self.add_comp(asd, self.inner.get_mouse(), self.inner.update_generation);
 							self.inner.forget_mouse();
 						}
 					}
 				}
 			}
 		}
+
+		// Node-ok megrajzolása (minden koordináta első Node-ja)
+		// Először kell a Node-okat rajzolni az invisible_button Z-koordinátája miatt
+		let mut newwires = Vec::new();
+		for (_, node) in &self.nodes.node_lookup {
+			let nodeidx = node[0];
+			let node = &self.nodes.node_storage[nodeidx];
+
+			let tobeadded = node.draw(nodeidx, &mut self.inner, ui);
+			if let Some(w) = tobeadded.0 { newwires.push(w); }
+			if let Some(w) = tobeadded.1 { newwires.push(w); }
+		}
+		for w in newwires { self.wires.try_add(w, &mut self.nodes); }
 
 		let keys: Vec<_> = self.comps.iter().map(|kv| kv.0).collect();
 		for i in keys {
@@ -249,21 +272,11 @@ impl Canvas {
 					}
 				}
 
-				self.comps[*k].move_to(newpos, &mut self.nodes, *k);
+				let mut element = self.comps[*k].clone();
+				element.move_to(newpos, &mut self.nodes, *k, &self.wires, &self.comps, &mut self.inner.update_generation);
+				self.comps[*k] = element;
 			}
 		}
-
-		// Node-ok megrajzolása (minden koordináta első Node-ja)
-		let mut newwires = Vec::new();
-		for (_, node) in &self.nodes.node_lookup {
-			let nodeidx = node[0];
-			let node = &self.nodes.node_storage[nodeidx];
-
-			let tobeadded = node.draw(nodeidx, &mut self.inner, ui);
-			if let Some(w) = tobeadded.0 { newwires.push(w); }
-			if let Some(w) = tobeadded.1 { newwires.push(w); }
-		}
-		for w in newwires { self.wires.try_add(w, &mut self.nodes); }
 
 		// Debug: Node-ok rajzolása
 		for (_, n) in &self.nodes.node_storage {
@@ -275,11 +288,15 @@ impl Canvas {
 		}
 	}
 
-	fn add_comp(&mut self, asd: CompKind, at: Vec2) {
+	fn add_comp(&mut self, asd: CompKind, at: Vec2, generation: u32) {
 		let c = Component::new(asd, at, self.inner.compid, &mut self.nodes);
 		let idx = self.comps.insert(c);
-		for n in &mut self.comps[idx].nodes {
+		for n in &self.comps[idx].nodes {
 			self.nodes.node_storage[*n].owner.replace(NodeOwner::Comp(idx));
+
+			let ll = self.nodes.node_storage[*n].logic_lvl;
+			let npos = self.nodes.node_storage[*n].pos;
+			set_nodes(&self.nodes.node_lookup, &mut self.nodes.node_storage, &self.wires, &self.comps, npos, generation, ll);
 		}
 		self.inner.compid += 1;
 	}

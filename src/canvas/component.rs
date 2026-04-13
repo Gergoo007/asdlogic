@@ -1,4 +1,4 @@
-use crate::{canvas::{Canvas, CanvasInner, CompKey, CompStorage, NodeHandler, NodeKey, NodeLookup, NodeOwner, NodeStorage, Vec2, logic::LL, set_nodes, vec2int, wires::{Wire, Wires}}, config};
+use crate::{canvas::{CanvasInner, CompKey, CompStorage, NodeHandler, NodeKey, NodeLookup, NodeOwner, NodeStorage, Vec2, logic::LL, set_nodes, wires::{Wire, Wires}}, config};
 
 #[derive(PartialEq, Debug, Clone)]
 pub struct Node {
@@ -77,7 +77,7 @@ impl Node {
 }
 
 #[allow(unused)]
-#[derive(strum::EnumIter, strum::EnumMessage, Debug, PartialEq)]
+#[derive(strum::EnumIter, strum::EnumMessage, Debug, PartialEq, Clone)]
 pub enum CompKind {
 	#[strum(message = "AND Gate")]	AndGate,
 	#[strum(message = "OR Gate")]	OrGate,
@@ -89,8 +89,7 @@ pub enum CompKind {
 impl CompKind {
 	pub const fn hitbox(&self) -> Vec2 {
 		match self {
-			CompKind::AndGate => Vec2::new(4.0, 4.0),
-			CompKind::OrGate => todo!(),
+			CompKind::AndGate | CompKind::OrGate => Vec2::new(4.0, 4.0),
 			CompKind::NandGate => todo!(),
 			CompKind::XorGate => todo!(),
 			CompKind::Input { state: _ } => Vec2::new(2.0, 2.0),
@@ -98,26 +97,41 @@ impl CompKind {
 	}
 
 	// FONTOS: az outputok jönnek először
-	pub fn nodes(&self) -> Vec<Node> {
+	// A tuple második eleme a kimenetek darabszáma
+	pub fn nodes(&self) -> (Vec<Node>, usize) {
 		match self {
 			CompKind::AndGate =>
-				vec![
-					Node { pos: Vec2::new(4.0, 2.0), owner: None, logic_lvl: LL::U, generation: 0, },
-					Node { pos: Vec2::new(0.0, 1.0), owner: None, logic_lvl: LL::U, generation: 0, },
-					Node { pos: Vec2::new(0.0, 3.0), owner: None, logic_lvl: LL::U, generation: 0, },
-				],
-			CompKind::OrGate => todo!(),
+				(
+					vec![
+						Node { pos: Vec2::new(4.0, 2.0), owner: None, logic_lvl: LL::U, generation: 0, },
+						Node { pos: Vec2::new(0.0, 1.0), owner: None, logic_lvl: LL::U, generation: 0, },
+						Node { pos: Vec2::new(0.0, 3.0), owner: None, logic_lvl: LL::U, generation: 0, },
+					],
+					1
+				),
+			CompKind::OrGate =>
+				(
+					vec![
+						Node { pos: Vec2::new(5.0, 2.0), owner: None, logic_lvl: LL::U, generation: 0, },
+						Node { pos: Vec2::new(1.0, 1.0), owner: None, logic_lvl: LL::U, generation: 0, },
+						Node { pos: Vec2::new(1.0, 3.0), owner: None, logic_lvl: LL::U, generation: 0, },
+					],
+					1
+				),
 			CompKind::NandGate => todo!(),
 			CompKind::XorGate => todo!(),
 			CompKind::Input { state: _ } =>
-				vec![
-					Node { pos: Vec2::new(2.0, 1.0), owner: None, logic_lvl: LL::L, generation: 0, },
-				]
+				(
+					vec![
+						Node { pos: Vec2::new(2.0, 1.0), owner: None, logic_lvl: LL::L, generation: 0, },
+					],
+					1,
+				),
 		}
 	}
 }
 
-#[derive(PartialEq)]
+#[derive(PartialEq, Clone)]
 #[allow(unused)]
 pub struct Component {
 	pub kind: CompKind,
@@ -130,7 +144,7 @@ pub struct Component {
 
 impl Component {
 	pub fn new(kind: CompKind, pos: Vec2, id: u64, nodes: &mut NodeHandler) -> Self {
-		let nodes: Vec<NodeKey> = kind.nodes().iter().map(|v| { let mut copy = (*v).clone(); copy.pos += pos; nodes.add_node(copy) }).collect();
+		let nodes: Vec<NodeKey> = kind.nodes().0.iter().map(|v| { let mut copy = (*v).clone(); copy.pos += pos; nodes.add_node(copy) }).collect();
 
 		Self {
 			kind,
@@ -187,7 +201,60 @@ impl Component {
 					.build();
 			},
 			CompKind::OrGate => {
+				// Hogy a Node-ok rácsra illeszkedjenek
+				const OFFSET: Vec2 = Vec2::new(0.231, 0.0);
 
+				// Elülső görbe
+				{
+					draw_list.add_bezier_curve(
+						canvas.canvas_to_window(self.pos + Vec2::new(2.00, 4.0 - curve_y_offset)),
+						canvas.canvas_to_window(self.pos + Vec2::new(4.50, 4.0 - curve_y_offset)),
+						canvas.canvas_to_window(self.pos + Vec2::new(5.00, 2.0 - curve_y_offset)),
+						canvas.canvas_to_window(self.pos + Vec2::new(5.00, 2.0 - curve_y_offset)),
+						0xffffffff
+					)
+						.thickness(config::COMPONENT_THICKNESS)
+						.build();
+
+					draw_list.add_bezier_curve(
+						canvas.canvas_to_window(self.pos + Vec2::new(2.00, 0.0 - curve_y_offset)),
+						canvas.canvas_to_window(self.pos + Vec2::new(4.50, 0.0 - curve_y_offset)),
+						canvas.canvas_to_window(self.pos + Vec2::new(5.00, 2.0 - curve_y_offset)),
+						canvas.canvas_to_window(self.pos + Vec2::new(5.00, 2.0 - curve_y_offset)),
+						0xffffffff
+					)
+						.thickness(config::COMPONENT_THICKNESS)
+						.build();
+				}
+
+				// Hátsó görbe görbe
+				{
+					draw_list.add_bezier_curve(
+						canvas.canvas_to_window(self.pos + OFFSET + Vec2::new(0.00, 0.0 - curve_y_offset)),
+						canvas.canvas_to_window(self.pos + OFFSET + Vec2::new(1.30, 1.0 - curve_y_offset)),
+						canvas.canvas_to_window(self.pos + OFFSET + Vec2::new(1.30, 3.0 - curve_y_offset)),
+						canvas.canvas_to_window(self.pos + OFFSET + Vec2::new(0.00, 4.0 - curve_y_offset)),
+						0xffffffff
+					)
+						.thickness(config::COMPONENT_THICKNESS)
+						.build();
+				}
+
+				draw_list.add_line(
+					canvas.canvas_to_window(self.pos + OFFSET + Vec2::new(0.0, 4.0)),
+					canvas.canvas_to_window(self.pos + Vec2::new(2.0, 4.0)),
+					0xffffffff
+				)
+					.thickness(config::COMPONENT_THICKNESS)
+					.build();
+
+				draw_list.add_line(
+					canvas.canvas_to_window(self.pos + OFFSET + Vec2::new(0.0, 0.0)),
+					canvas.canvas_to_window(self.pos + Vec2::new(2.0, 0.0)),
+					0xffffffff
+				)
+					.thickness(config::COMPONENT_THICKNESS)
+					.build();
 			},
 			CompKind::NandGate => {
 
@@ -261,9 +328,10 @@ impl Component {
 		clicked
 	}
 
-	pub fn move_to(&mut self, to: Vec2, nodes: &mut NodeHandler, cidx: CompKey) {
+	pub fn move_to(&mut self, to: Vec2, nodes: &mut NodeHandler, cidx: CompKey, wires: &Wires, comps: &CompStorage, generation: &mut u32) {
 		for nidx in &self.nodes {
-			nodes.move_node(*nidx, to - self.pos, NodeOwner::Comp(cidx));
+			nodes.move_node(*nidx, to - self.pos, NodeOwner::Comp(cidx), wires, comps, *generation);
+			*generation += 1;
 		}
 
 		self.pos = to;
@@ -289,9 +357,27 @@ impl Component {
 				}
 				set_nodes(node_lookup, node_storage, wires, comps, node_storage[self.nodes[0]].pos, generation, value);
 			},
-			CompKind::OrGate => todo!(),
-			CompKind::NandGate => todo!(),
-			CompKind::XorGate => todo!(),
+			CompKind::OrGate => {
+				let mut value = node_storage[self.nodes[1]].logic_lvl;
+				for n in self.nodes.iter().skip(1) {
+					value |= node_storage[*n].logic_lvl;
+				}
+				set_nodes(node_lookup, node_storage, wires, comps, node_storage[self.nodes[0]].pos, generation, value);
+			},
+			CompKind::NandGate => {
+				let mut value = node_storage[self.nodes[1]].logic_lvl;
+				for n in self.nodes.iter().skip(1) {
+					value &= node_storage[*n].logic_lvl;
+				}
+				set_nodes(node_lookup, node_storage, wires, comps, node_storage[self.nodes[0]].pos, generation, !value);
+			},
+			CompKind::XorGate => {
+				let mut value = node_storage[self.nodes[1]].logic_lvl;
+				for n in self.nodes.iter().skip(1) {
+					value ^= node_storage[*n].logic_lvl;
+				}
+				set_nodes(node_lookup, node_storage, wires, comps, node_storage[self.nodes[0]].pos, generation, value);
+			},
 			CompKind::Input { state } => {
 				node_storage[self.nodes[0]].logic_lvl = state.into();
 				set_nodes(node_lookup, node_storage, wires, comps, node_storage[self.nodes[0]].pos, generation, state.into());

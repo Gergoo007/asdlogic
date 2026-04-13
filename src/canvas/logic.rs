@@ -90,3 +90,25 @@ impl ops::BitOrAssign for LL {
 impl ops::BitXorAssign for LL {
 	fn bitxor_assign(&mut self, rhs: Self) { *self = *self ^ rhs; }
 }
+
+impl ops::Not for LL {
+	type Output = Self;
+	fn not(self) -> Self::Output {
+		match self {
+			LL::H => LL::L,
+			LL::L => LL::H,
+			LL::U => LL::U,
+		}
+	}
+}
+
+impl ops::Neg for LL {
+	type Output = Self;
+	fn neg(self) -> Self::Output {
+		match self {
+			LL::H => LL::L,
+			LL::L => LL::H,
+			LL::U => LL::U,
+		}
+	}
+}
