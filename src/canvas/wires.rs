@@ -1,6 +1,6 @@
 use imgui::Ui;
 
-use crate::{canvas::{CanvasInner, NodeHandler, NodeKey, NodeOwner, Vec2, WireKey, WireStorage, component::{Node}, logic::LL}, config};
+use crate::{canvas::{CanvasInner, NodeHandler, NodeKey, NodeOwner, Vec2, WireKey, WireStorage, component::Node}, config};
 
 #[derive(Debug)]
 pub struct Wire {
@@ -89,8 +89,16 @@ impl Wires {
 
 	fn add(&mut self, start: Vec2, end: Vec2, nodes: &mut NodeHandler) -> WireKey {
 		let wire = self.wires.insert(Wire::skeleton(start, end));
-		self.wires[wire].startnode.replace(nodes.add_node(Node { pos: start, owner: Some(NodeOwner::Wire(wire)), logic_lvl: LL::U, generation: 0, }));
-		self.wires[wire].endnode.replace(nodes.add_node(Node { pos: end, owner: Some(NodeOwner::Wire(wire)), logic_lvl: LL::U, generation: 0, }));
+
+		let mut ll1 = nodes.query_node(start);
+		if !ll1.merge(nodes.query_node(end)) {
+			// Rövidzárlat; output a rossz Node?
+
+		}
+
+		self.wires[wire].startnode.replace(nodes.add_node(Node { pos: start, owner: Some(NodeOwner::Wire(wire)), logic_lvl: ll1, generation: 0, output: false, }));
+		self.wires[wire].endnode.replace(nodes.add_node(Node { pos: end, owner: Some(NodeOwner::Wire(wire)), logic_lvl: ll1, generation: 0, output: false, }));
+
 		wire
 	}
 
@@ -107,7 +115,7 @@ impl Wires {
 
 			// let argb: u32 = (a << 24) | (r << 16) | (g << 8) | b;
 
-			debug_assert!(nodes.node_storage[w.startnode.unwrap()].logic_lvl == nodes.node_storage[w.endnode.unwrap()].logic_lvl);
+			// debug_assert_eq!(nodes.node_storage[w.startnode.unwrap()].logic_lvl, nodes.node_storage[w.endnode.unwrap()].logic_lvl);
 
 			let logic_lvl = &nodes.node_storage[w.startnode.unwrap()].logic_lvl;
 			let argb = logic_lvl.to_color();

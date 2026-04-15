@@ -85,8 +85,20 @@ impl NodeHandler {
 
 	pub fn add_node(&mut self, n: Node) -> NodeKey {
 		let pos = n.pos;
+		let output = n.output;
 		let idx = self.node_storage.insert(n);
-		self.node_lookup.entry(vec2int(pos)).and_modify(|v| { v.push(idx); }).or_insert(vec![idx]);
+		self.node_lookup.entry(vec2int(pos)).and_modify(|v| {
+			// Ha már van itt Node, akkor az új Node is felveszi az itt lévő Node-ok logikai értékét
+			let ll = self.node_storage[idx].logic_lvl;
+			v.push(idx);
+			for v in v.iter() {
+				if !self.node_storage[*v].logic_lvl.merge(ll) {
+					if output {
+						unreachable!("Short circuit when adding new node!");
+					}
+				}
+			}
+		}).or_insert(vec![idx]);
 		idx
 	}
 
@@ -100,7 +112,7 @@ impl NodeHandler {
 
 		// Az extract_if eltávolítja az adott NodeKey-t a HashMap vektorából,
 		// a closure-ön belül pedig a NodeStorage Arénából is kiszedem
-		
+
 		vals.retain_mut(|e| {
 			let remove = *self.node_storage[*e].owner.as_ref().unwrap() == owner;
 			if remove {
@@ -116,6 +128,14 @@ impl NodeHandler {
 		}
 
 		node.unwrap()
+	}
+
+	pub fn query_node(&self, at: Vec2) -> LL {
+		if self.node_lookup.contains_key(&vec2int(at)) {
+			self.node_storage[self.node_lookup[&vec2int(at)][0]].logic_lvl
+		} else {
+			LL::U
+		}
 	}
 
 	pub fn move_node(&mut self, nidx: NodeKey, by: Vec2, owner: NodeOwner, wires: &Wires, comps: &CompStorage, generation: u32) {
@@ -278,10 +298,9 @@ impl Canvas {
 			}
 		}
 
-		// Debug: Node-ok rajzolása
+		// Debug
+		let draw_list = ui.get_window_draw_list();
 		for (_, n) in &self.nodes.node_storage {
-			let draw_list = ui.get_window_draw_list();
-
 			draw_list.add_circle(self.inner.canvas_to_window(n.pos), config::NODE_RADIUS, n.logic_lvl.to_color())
 				.filled(true)
 				.build();

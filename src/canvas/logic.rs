@@ -11,10 +11,31 @@ pub enum LL {
 impl LL {
 	pub fn to_color(self) -> u32 {
 		match self {
-			LL::H => 0xff3517F7,
-			LL::L => 0xffD4EA41,
+			LL::L => imgui::ImColor32::from_rgb(255, 76, 60).to_bits(),
+			LL::H => imgui::ImColor32::from_rgb(0, 255, 255).to_bits(),
 			LL::U => 0xffffffff,
 		}
+	}
+
+	// Eldönti a két jel közül a dominánsabbikat; true ha sikeres, false ha rövidzárlat van
+	pub fn merge(&mut self, other: Self) -> bool {
+		if *self == LL::U {
+			*self = other;
+			true
+		} else {
+			if *self != other && *self != LL::U && other != LL::U {
+				eprintln!("merge: Short circuit ({self:?} vs {other:?})!");
+				false
+			} else {
+				true
+			}
+		}
+	}
+}
+
+impl Default for LL {
+	fn default() -> Self {
+		LL::U
 	}
 }
 
@@ -77,7 +98,6 @@ impl ops::BitXor for LL {
 		}
 	}
 }
-
 
 impl ops::BitAndAssign for LL {
 	fn bitand_assign(&mut self, rhs: Self) { *self = *self & rhs; }
