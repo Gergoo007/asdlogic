@@ -103,7 +103,7 @@ impl CompKind {
 		match self {
 			CompKind::AndGate => (
 				vec![
-					Node { pos: Vec2::new(4.0, 2.0), owner: None, logic_lvl: LL::default(), generation: 0, output: false, },
+					Node { pos: Vec2::new(4.0, 2.0), owner: None, logic_lvl: LL::default(), generation: 0, output: true, },
 					Node { pos: Vec2::new(0.0, 1.0), owner: None, logic_lvl: LL::default(), generation: 0, output: false, },
 					Node { pos: Vec2::new(0.0, 3.0), owner: None, logic_lvl: LL::default(), generation: 0, output: false, },
 				],
@@ -111,7 +111,7 @@ impl CompKind {
 			),
 			CompKind::OrGate => (
 				vec![
-					Node { pos: Vec2::new(5.0, 2.0), owner: None, logic_lvl: LL::default(), generation: 0, output: false, },
+					Node { pos: Vec2::new(5.0, 2.0), owner: None, logic_lvl: LL::default(), generation: 0, output: true, },
 					Node { pos: Vec2::new(1.0, 1.0), owner: None, logic_lvl: LL::default(), generation: 0, output: false, },
 					Node { pos: Vec2::new(1.0, 3.0), owner: None, logic_lvl: LL::default(), generation: 0, output: false, },
 				],
@@ -119,7 +119,7 @@ impl CompKind {
 			),
 			CompKind::NandGate => (
 				vec![
-					Node { pos: Vec2::new(5.0, 2.0), owner: None, logic_lvl: LL::default(), generation: 0, output: false, },
+					Node { pos: Vec2::new(5.0, 2.0), owner: None, logic_lvl: LL::default(), generation: 0, output: true, },
 					Node { pos: Vec2::new(0.0, 1.0), owner: None, logic_lvl: LL::default(), generation: 0, output: false, },
 					Node { pos: Vec2::new(0.0, 3.0), owner: None, logic_lvl: LL::default(), generation: 0, output: false, },
 				],
@@ -127,7 +127,7 @@ impl CompKind {
 			),
 			CompKind::XorGate => (
 				vec![
-					Node { pos: Vec2::new(5.0, 2.0), owner: None, logic_lvl: LL::default(), generation: 0, output: false, },
+					Node { pos: Vec2::new(5.0, 2.0), owner: None, logic_lvl: LL::default(), generation: 0, output: true, },
 					Node { pos: Vec2::new(1.0, 1.0), owner: None, logic_lvl: LL::default(), generation: 0, output: false, },
 					Node { pos: Vec2::new(1.0, 3.0), owner: None, logic_lvl: LL::default(), generation: 0, output: false, },
 				],
@@ -135,7 +135,7 @@ impl CompKind {
 			),
 			CompKind::Input { state: _ } => (
 				vec![
-					Node { pos: Vec2::new(2.0, 1.0), owner: None, logic_lvl: LL::L, generation: 0, output: false, },
+					Node { pos: Vec2::new(2.0, 1.0), owner: None, logic_lvl: LL::L, generation: 0, output: true, },
 				],
 				1,
 			),
@@ -439,7 +439,7 @@ impl Component {
 
 	pub fn move_to(&mut self, to: Vec2, nodes: &mut NodeHandler, cidx: CompKey, wires: &Wires, comps: &CompStorage, generation: &mut u32) {
 		for nidx in &self.nodes {
-			nodes.move_node(*nidx, to - self.pos, NodeOwner::Comp(cidx), wires, comps, *generation);
+			nodes.move_node(*nidx, to - self.pos, NodeOwner::Comp(cidx), wires, comps, generation);
 			*generation += 1;
 		}
 
@@ -455,7 +455,7 @@ impl Component {
 		}
 	}
 
-	pub fn update(&self, generation: u32, node_lookup: &NodeLookup, node_storage: &mut NodeStorage, wires: &Wires, comps: &CompStorage) {
+	pub fn update(&self, generation: &mut u32, node_lookup: &NodeLookup, node_storage: &mut NodeStorage, wires: &Wires, comps: &CompStorage) {
 		// Kimenet kiszámítása a bemeneteknek megfelelően
 		match self.kind {
 			CompKind::AndGate => {
@@ -463,31 +463,31 @@ impl Component {
 				for n in self.nodes.iter().skip(2) {
 					value &= node_storage[*n].logic_lvl;
 				}
-				set_nodes(node_lookup, node_storage, wires, comps, node_storage[self.nodes[0]].pos, generation, value);
+				set_nodes(node_lookup, node_storage, wires, comps, node_storage[self.nodes[0]].pos, generation, value, false);
 			},
 			CompKind::OrGate => {
 				let mut value = node_storage[self.nodes[1]].logic_lvl;
 				for n in self.nodes.iter().skip(2) {
 					value |= node_storage[*n].logic_lvl;
 				}
-				set_nodes(node_lookup, node_storage, wires, comps, node_storage[self.nodes[0]].pos, generation, value);
+				set_nodes(node_lookup, node_storage, wires, comps, node_storage[self.nodes[0]].pos, generation, value, false);
 			},
 			CompKind::NandGate => {
 				let mut value = node_storage[self.nodes[1]].logic_lvl;
 				for n in self.nodes.iter().skip(2) {
 					value &= node_storage[*n].logic_lvl;
 				}
-				set_nodes(node_lookup, node_storage, wires, comps, node_storage[self.nodes[0]].pos, generation, !value);
+				set_nodes(node_lookup, node_storage, wires, comps, node_storage[self.nodes[0]].pos, generation, !value, false);
 			},
 			CompKind::XorGate => {
 				let mut value = node_storage[self.nodes[1]].logic_lvl;
 				for n in self.nodes.iter().skip(2) {
 					value ^= node_storage[*n].logic_lvl;
 				}
-				set_nodes(node_lookup, node_storage, wires, comps, node_storage[self.nodes[0]].pos, generation, value);
+				set_nodes(node_lookup, node_storage, wires, comps, node_storage[self.nodes[0]].pos, generation, value, false);
 			},
 			CompKind::Input { state } => {
-				set_nodes(node_lookup, node_storage, wires, comps, node_storage[self.nodes[0]].pos, generation, state.into());
+				set_nodes(node_lookup, node_storage, wires, comps, node_storage[self.nodes[0]].pos, generation, state.into(), false);
 			},
 		}
 	}

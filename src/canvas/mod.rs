@@ -12,15 +12,15 @@ mod logic;
 
 pub type Vec2 = glam::Vec2;
 
-pub type NodeStorage = generational_arena::Arena<Node>;
-pub type NodeKey = generational_arena::Index;
+pub type NodeStorage = typed_generational_arena::StandardArena<Node>;
+pub type NodeKey = typed_generational_arena::StandardIndex<Node>;
 pub type NodeLookup = HashMap<IVec2, Vec<NodeKey>>;
 
-pub type CompStorage = generational_arena::Arena<Component>;
-pub type CompKey = generational_arena::Index;
+pub type CompStorage = typed_generational_arena::StandardArena<Component>;
+pub type CompKey = typed_generational_arena::StandardIndex<Component>;
 
-pub type WireStorage = generational_arena::Arena<Wire>;
-pub type WireKey = generational_arena::Index;
+pub type WireStorage = typed_generational_arena::StandardArena<Wire>;
+pub type WireKey = typed_generational_arena::StandardIndex<Wire>;
 
 #[derive(PartialEq, Clone, Copy, Debug)]
 pub enum NodeOwner {
@@ -37,6 +37,7 @@ pub struct Canvas {
 	pub comps: CompStorage,
 	pub wires: Wires,
 	pub nodes: NodeHandler,
+	pub update_generation: u32,
 }
 
 pub struct NodeHandler {
@@ -44,27 +45,81 @@ pub struct NodeHandler {
 	pub node_lookup: NodeLookup,
 }
 
-pub fn set_nodes(node_lookup: &NodeLookup, node_storage: &mut NodeStorage, wires: &Wires, comps: &CompStorage, at: Vec2, generation: u32, ll: LL) {
+fn check_driven(node_lookup: &NodeLookup, node_storage: &mut NodeStorage, wires: &Wires, comps: &CompStorage, at: Vec2, generation: &mut u32, inc_gen: bool) -> bool {
+	if inc_gen {
+		*generation += 1;
+	}
+
 	for node in &node_lookup[&vec2int(at)] {
 		let k = *node;
 		let node = &mut node_storage[k];
 
-		if node.generation == generation {
+		let oldgen = node.generation;
+
+		node.generation = *generation;
+
+		if node.output {
+			return true;
+		}
+
+		// Itt már jártam
+		if oldgen == *generation {
+			return false;
+		}
+
+		if let Some(NodeOwner::Wire(w)) = node.owner {
+			// Ha vezeték, akkor a másik node-ot is be kell állítani
+			if k == wires.wires[w].startnode.unwrap() {
+				if check_driven(node_lookup, node_storage, wires, comps, wires.wires[w].end, generation, false) {
+					return true;
+				}
+			} else if k == wires.wires[w].endnode.unwrap() {
+				if check_driven(node_lookup, node_storage, wires, comps, wires.wires[w].start, generation, false) {
+					return true;
+				}
+			} else {
+				unreachable!("he????");
+			}
+		}
+	}
+	return false;
+}
+
+// Beállítja az összes Node logikai értékét
+// Külön eset ha LL::U-ra kell beállítani, mivel akkor végig fog menni az összes csatlakozáson megnézni hogy
+// meg van-e hajtva a hálózat. Ha meg van, akkor nem csinál semmit.
+pub fn set_nodes(node_lookup: &NodeLookup, node_storage: &mut NodeStorage, wires: &Wires, comps: &CompStorage, at: Vec2, generation: &mut u32, ll: LL, inc_gen: bool) {
+	// Itt kell lecsekkolni hogy lebegőnek kell-e lennie ezeknek a Node-oknak
+	if ll == LL::U && inc_gen {
+		if check_driven(node_lookup, node_storage, wires, comps, at, generation, true) {
+			return;
+		}
+	}
+
+	if inc_gen {
+		*generation += 1;
+	}
+
+	for node in &node_lookup[&vec2int(at)] {
+		let k = *node;
+		let node = &mut node_storage[k];
+
+		if node.generation == *generation {
 			if node.logic_lvl != ll {
-				eprintln!("Short circuit!");
+				eprintln!("Short circuit! {:?} vs {:?}", node.logic_lvl, ll);
 			}
 			return;
 		}
 
 		node.logic_lvl = ll;
-		node.generation = generation;
+		node.generation = *generation;
 
 		if let Some(NodeOwner::Wire(w)) = node.owner {
 			// Ha vezeték, akkor a másik node-ot is be kell állítani
 			if k == wires.wires[w].startnode.unwrap() {
-				set_nodes(node_lookup, node_storage, wires, comps, wires.wires[w].end, generation, ll);
+				set_nodes(node_lookup, node_storage, wires, comps, wires.wires[w].end, generation, ll, false);
 			} else if k == wires.wires[w].endnode.unwrap() {
-				set_nodes(node_lookup, node_storage, wires, comps, wires.wires[w].start, generation, ll);
+				set_nodes(node_lookup, node_storage, wires, comps, wires.wires[w].start, generation, ll, false);
 			} else {
 				unreachable!("he????");
 			}
@@ -103,7 +158,11 @@ impl NodeHandler {
 	}
 
 	pub fn count_nodes(&self, at: Vec2) -> usize {
-		self.node_lookup[&vec2int(at)].len()
+		if self.node_lookup.contains_key(&vec2int(at)) {
+			self.node_lookup[&vec2int(at)].len()
+		} else {
+			0
+		}
 	}
 
 	pub fn remove_node(&mut self, at: Vec2, owner: NodeOwner) -> Node {
@@ -138,10 +197,13 @@ impl NodeHandler {
 		}
 	}
 
-	pub fn move_node(&mut self, nidx: NodeKey, by: Vec2, owner: NodeOwner, wires: &Wires, comps: &CompStorage, generation: u32) {
+	pub fn move_node(&mut self, nidx: NodeKey, by: Vec2, owner: NodeOwner, wires: &Wires, comps: &CompStorage, generation: &mut u32) {
 		let oldpos = self.node_storage[nidx].pos;
 		let newpos = oldpos + by;
 		let k = vec2int(oldpos);
+
+		// Ha van már Node a cél koordinátán akkor ez tárolja el az értékét
+		let mut destination_logic_level = None;
 
 		// Koordináták frissítése a HashMap-ben:
 		// 1.1. ki kell venni a releváns NodeKey-eket az adott koordinátából
@@ -161,6 +223,7 @@ impl NodeHandler {
 
 		// 2. vissza kell tenni az új koordinátára a kivett értékeket
 		self.node_lookup.entry(vec2int(newpos)).and_modify(|nodekeys| {
+			destination_logic_level.replace(self.node_storage[nodekeys[0]].logic_lvl);
 			nodekeys.push(node);
 		}).or_insert(vec![ node ]);
 
@@ -169,7 +232,16 @@ impl NodeHandler {
 
 		// Az esetleges új kapcsolatok feldolgozása
 		let ll = self.node_storage[nidx].logic_lvl;
-		set_nodes(&self.node_lookup, &mut self.node_storage, wires, comps, newpos, generation, ll);
+		set_nodes(&self.node_lookup, &mut self.node_storage, wires, comps, newpos, generation, ll, true);
+
+		// Ha nincs meghajtva ez a Node akkor legyen LL::U az értéke
+		if !check_driven(&self.node_lookup, &mut self.node_storage, wires, comps, newpos, generation, true) {
+			self.node_storage[nidx].logic_lvl = LL::U;
+		} else {
+			if let Some(lvl) = destination_logic_level {
+				self.node_storage[nidx].logic_lvl = lvl;
+			}
+		}
 	}
 }
 
@@ -195,21 +267,18 @@ impl Canvas {
 			comps: CompStorage::new(),
 			wires: Wires::new(),
 			nodes: NodeHandler::new(),
+			update_generation: 0,
 		};
-
-		let gener = s.inner.newgen();
-		s.add_comp(CompKind::OrGate, Vec2::new(0.0, -5.0), gener);
-
-		let gener = s.inner.newgen();
-		s.add_comp(CompKind::AndGate, Vec2::new(0.0, 0.0), gener);
+		
+		s.add_comp(CompKind::OrGate, Vec2::new(0.0, -5.0));
+		
+		s.add_comp(CompKind::AndGate, Vec2::new(0.0, 0.0));
 
 		s.wires.try_add(Wire { start: Vec2::new(0.0, 1.0), end: Vec2::new(-5.0, 1.0), startnode: None, endnode: None }, &mut s.nodes);
-		let gener = s.inner.newgen();
-		s.add_comp(CompKind::Input { state: false }, Vec2::new(-7.0, 0.0), gener);
+		s.add_comp(CompKind::Input { state: false }, Vec2::new(-7.0, 0.0));
 
 		s.wires.try_add(Wire { start: Vec2::new(0.0, 3.0), end: Vec2::new(-5.0, 3.0), startnode: None, endnode: None }, &mut s.nodes);
-		let gener = s.inner.newgen();
-		s.add_comp(CompKind::Input { state: false }, Vec2::new(-7.0, 2.0), gener);
+		s.add_comp(CompKind::Input { state: false }, Vec2::new(-7.0, 2.0));
 
 		s.wires.try_add(Wire { start: Vec2::new(4.0, 2.0), end: Vec2::new(8.0, 2.0), startnode: None, endnode: None }, &mut s.nodes);
 
@@ -232,6 +301,11 @@ impl Canvas {
 		let pos = self.inner.window_to_canvas(ui.io().mouse_pos.into());
 		ui.text(format!("mouse ({}, {})", pos.x, pos.y));
 
+		let coord = self.inner.window_to_canvas(ui.io().mouse_pos.into());
+		if self.nodes.count_nodes(coord) > 0 {
+			ui.text(format!("{:?} is driven: {}", coord, check_driven(&self.nodes.node_lookup, &mut self.nodes.node_storage, &self.wires, &self.comps, coord, &mut self.update_generation, true)));
+		}
+
 		if let Some(_) = ui.begin_popup_context_window() {
 			self.inner.record_mouse(&io.mouse_pos.into());
 
@@ -239,7 +313,7 @@ impl Canvas {
 				if let Some(_) = ui.begin_menu("Logic Gate") {
 					for asd in CompKind::iter() {
 						if ui.menu_item(format!("{}", asd.get_message().unwrap())) {
-							self.add_comp(asd, self.inner.get_mouse(), self.inner.update_generation);
+							self.add_comp(asd, self.inner.get_mouse());
 							self.inner.forget_mouse();
 						}
 					}
@@ -264,8 +338,8 @@ impl Canvas {
 		for i in keys {
 			if self.comps.get_mut(i).unwrap().draw(&mut self.inner, ui) {
 				self.comps.get_mut(i).unwrap().on_click();
-				self.comps[i].update(self.inner.update_generation, &self.nodes.node_lookup, &mut self.nodes.node_storage, &self.wires, &self.comps);
-				self.inner.update_generation += 1;
+				self.comps[i].update(&mut self.update_generation, &self.nodes.node_lookup, &mut self.nodes.node_storage, &self.wires, &self.comps);
+				self.update_generation += 1;
 			}
 		}
 
@@ -293,7 +367,7 @@ impl Canvas {
 				}
 
 				let mut element = self.comps[*k].clone();
-				element.move_to(newpos, &mut self.nodes, *k, &self.wires, &self.comps, &mut self.inner.update_generation);
+				element.move_to(newpos, &mut self.nodes, *k, &self.wires, &self.comps, &mut self.update_generation);
 				self.comps[*k] = element;
 			}
 		}
@@ -307,7 +381,7 @@ impl Canvas {
 		}
 	}
 
-	fn add_comp(&mut self, asd: CompKind, at: Vec2, generation: u32) {
+	fn add_comp(&mut self, asd: CompKind, at: Vec2) {
 		let c = Component::new(asd, at, self.inner.compid, &mut self.nodes);
 		let idx = self.comps.insert(c);
 		for n in &self.comps[idx].nodes {
@@ -315,7 +389,7 @@ impl Canvas {
 
 			let ll = self.nodes.node_storage[*n].logic_lvl;
 			let npos = self.nodes.node_storage[*n].pos;
-			set_nodes(&self.nodes.node_lookup, &mut self.nodes.node_storage, &self.wires, &self.comps, npos, generation, ll);
+			set_nodes(&self.nodes.node_lookup, &mut self.nodes.node_storage, &self.wires, &self.comps, npos, &mut self.update_generation, ll, true);
 		}
 		self.inner.compid += 1;
 	}

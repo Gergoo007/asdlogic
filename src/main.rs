@@ -13,7 +13,7 @@ use winit::{
 	window::Window,
 };
 
-pub mod config;
+mod config;
 mod canvas;
 
 struct ImguiState {

@@ -8,7 +8,6 @@ pub struct CanvasInner {
 	pub compid: u64,
 	pub grab_mouse_offset: Option<(u64, Vec2)>,
 	pub wire_horiz: bool,
-	pub update_generation: u32,
 
 		size: Vec2,
 		pipeline: wgpu::RenderPipeline,
@@ -76,7 +75,6 @@ impl CanvasInner {
 			compid: 0,
 			grab_mouse_offset: None,
 			wire_horiz: false,
-			update_generation: 1,
 		}
 	}
 
@@ -148,11 +146,5 @@ impl CanvasInner {
 		let cols = self.size.x / gsz + 1.0;
 		let rows = self.size.y / gsz + 1.0;
 		rpass.draw(0..6, 0..(cols*rows) as u32);
-	}
-
-	// newgen
-	pub fn newgen(&mut self) -> u32 {
-		self.update_generation += 1;
-		self.update_generation
 	}
 }
