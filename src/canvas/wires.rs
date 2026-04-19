@@ -37,7 +37,7 @@ impl Wire {
 
 	pub fn draw(&self, canvas: &CanvasInner, draw_list: &imgui::DrawListMut, color: Option<u32>) {
 		draw_list.add_line(canvas.canvas_to_window(self.start), canvas.canvas_to_window(self.end), if let Some(c) = color { c } else { 0xffffffff })
-			.thickness(config::WIRE_THICKNESS)
+			.thickness(config::WIRE_THICKNESS * canvas.zoom)
 			.build();
 	}
 

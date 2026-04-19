@@ -201,14 +201,14 @@ impl Canvas {
 			}
 		}
 
-		// Node-ok megrajzolása (minden koordináta első Node-ja)
+		// Node-ok gombjainak létrehozása (minden koordináta első Node-ja)
 		// Először kell a Node-okat rajzolni az invisible_button Z-koordinátája miatt
 		let mut newwires = Vec::new();
 		for (_, node) in &self.nodes.node_lookup {
 			let nodeidx = node[0];
 			let node = &self.nodes.node_storage[nodeidx];
 
-			let tobeadded = node.draw(nodeidx, &mut self.inner, ui);
+			let tobeadded = node.process(nodeidx, &mut self.inner, ui);
 			if let Some(w) = tobeadded.0 { newwires.push(w); }
 			if let Some(w) = tobeadded.1 { newwires.push(w); }
 		}
@@ -252,12 +252,11 @@ impl Canvas {
 			}
 		}
 
-		// Debug
-		let draw_list = ui.get_window_draw_list();
-		for (_, n) in &self.nodes.node_storage {
-			draw_list.add_circle(self.inner.canvas_to_window(n.pos), config::NODE_RADIUS, n.logic_lvl.to_color())
-				.filled(true)
-				.build();
+		for (_, node) in &self.nodes.node_lookup {
+			let nodeidx = node[0];
+			let node = &self.nodes.node_storage[nodeidx];
+
+			node.draw(&mut self.inner, ui);
 		}
 	}
 

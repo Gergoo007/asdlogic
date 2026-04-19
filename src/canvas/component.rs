@@ -99,6 +99,8 @@ impl Component {
 
 		let mut clicked = false;
 
+		let th = config::COMPONENT_THICKNESS * canvas.zoom;
+
 		match self.kind {
 			CompKind::AndGate => {
 				draw_list.add_bezier_curve(
@@ -108,7 +110,7 @@ impl Component {
 					canvas.canvas_to_window(self.pos + Vec2::new(2.00, 0.0 - curve_y_offset)),
 					0xffffffff
 				)
-					.thickness(config::COMPONENT_THICKNESS)
+					.thickness(th)
 					.build();
 
 				draw_list.add_line(
@@ -116,7 +118,7 @@ impl Component {
 					canvas.canvas_to_window(self.pos + Vec2::new(2.0, 4.0)),
 					0xffffffff
 				)
-					.thickness(config::COMPONENT_THICKNESS)
+					.thickness(th)
 					.build();
 
 				draw_list.add_line(
@@ -124,7 +126,7 @@ impl Component {
 					canvas.canvas_to_window(self.pos + Vec2::new(2.0, 0.0)),
 					0xffffffff
 				)
-					.thickness(config::COMPONENT_THICKNESS)
+					.thickness(th)
 					.build();
 
 				draw_list.add_line(
@@ -132,7 +134,7 @@ impl Component {
 					canvas.canvas_to_window(self.pos + Vec2::new(0.0, 0.0)),
 					0xffffffff
 				)
-					.thickness(config::COMPONENT_THICKNESS)
+					.thickness(th)
 					.build();
 			},
 			CompKind::OrGate => {
@@ -148,7 +150,7 @@ impl Component {
 						canvas.canvas_to_window(self.pos + Vec2::new(5.00, 2.0 - curve_y_offset)),
 						0xffffffff
 					)
-						.thickness(config::COMPONENT_THICKNESS)
+						.thickness(th)
 						.build();
 
 					draw_list.add_bezier_curve(
@@ -158,7 +160,7 @@ impl Component {
 						canvas.canvas_to_window(self.pos + Vec2::new(5.00, 2.0 - curve_y_offset)),
 						0xffffffff
 					)
-						.thickness(config::COMPONENT_THICKNESS)
+						.thickness(th)
 						.build();
 				}
 
@@ -171,7 +173,7 @@ impl Component {
 						canvas.canvas_to_window(self.pos + OFFSET + Vec2::new(0.00, 4.0 - curve_y_offset)),
 						0xffffffff
 					)
-						.thickness(config::COMPONENT_THICKNESS)
+						.thickness(th)
 						.build();
 				}
 
@@ -180,7 +182,7 @@ impl Component {
 					canvas.canvas_to_window(self.pos + Vec2::new(2.0, 4.0)),
 					0xffffffff
 				)
-					.thickness(config::COMPONENT_THICKNESS)
+					.thickness(th)
 					.build();
 
 				draw_list.add_line(
@@ -188,7 +190,7 @@ impl Component {
 					canvas.canvas_to_window(self.pos + Vec2::new(2.0, 0.0)),
 					0xffffffff
 				)
-					.thickness(config::COMPONENT_THICKNESS)
+					.thickness(th)
 					.build();
 			},
 			CompKind::NandGate => {
@@ -199,7 +201,7 @@ impl Component {
 					canvas.canvas_to_window(self.pos + Vec2::new(2.00, 0.0 - curve_y_offset)),
 					0xffffffff
 				)
-					.thickness(config::COMPONENT_THICKNESS)
+					.thickness(th)
 					.build();
 
 				draw_list.add_line(
@@ -207,7 +209,7 @@ impl Component {
 					canvas.canvas_to_window(self.pos + Vec2::new(2.0, 4.0)),
 					0xffffffff
 				)
-					.thickness(config::COMPONENT_THICKNESS)
+					.thickness(th)
 					.build();
 
 				draw_list.add_line(
@@ -215,7 +217,7 @@ impl Component {
 					canvas.canvas_to_window(self.pos + Vec2::new(2.0, 0.0)),
 					0xffffffff
 				)
-					.thickness(config::COMPONENT_THICKNESS)
+					.thickness(th)
 					.build();
 
 				draw_list.add_line(
@@ -223,7 +225,7 @@ impl Component {
 					canvas.canvas_to_window(self.pos + Vec2::new(0.0, 0.0)),
 					0xffffffff
 				)
-					.thickness(config::COMPONENT_THICKNESS)
+					.thickness(th)
 					.build();
 
 				draw_list.add_circle(
@@ -231,7 +233,7 @@ impl Component {
 					canvas.zoom * (GRID_SPACING / 2.0),
 					0xffffffff
 				)
-					.thickness(config::COMPONENT_THICKNESS)
+					.thickness(th)
 					.build();
 			},
 			CompKind::XorGate => {
@@ -247,7 +249,7 @@ impl Component {
 						canvas.canvas_to_window(self.pos + Vec2::new(5.00, 2.0 - curve_y_offset)),
 						0xffffffff
 					)
-						.thickness(config::COMPONENT_THICKNESS)
+						.thickness(th)
 						.build();
 
 					draw_list.add_bezier_curve(
@@ -257,7 +259,7 @@ impl Component {
 						canvas.canvas_to_window(self.pos + Vec2::new(5.00, 2.0 - curve_y_offset)),
 						0xffffffff
 					)
-						.thickness(config::COMPONENT_THICKNESS)
+						.thickness(th)
 						.build();
 				}
 
@@ -271,7 +273,7 @@ impl Component {
 						canvas.canvas_to_window(self.pos + so + OFFSET + Vec2::new(0.00, 4.0 - curve_y_offset)),
 						0xffffffff
 					)
-						.thickness(config::COMPONENT_THICKNESS)
+						.thickness(th)
 						.build();
 				}
 
@@ -284,7 +286,7 @@ impl Component {
 						canvas.canvas_to_window(self.pos + OFFSET + Vec2::new(0.00, 4.0 - curve_y_offset)),
 						0xffffffff
 					)
-						.thickness(config::COMPONENT_THICKNESS)
+						.thickness(th)
 						.build();
 				}
 
@@ -293,7 +295,7 @@ impl Component {
 					canvas.canvas_to_window(self.pos + Vec2::new(2.0, 4.0)),
 					0xffffffff
 				)
-					.thickness(config::COMPONENT_THICKNESS)
+					.thickness(th)
 					.build();
 
 				draw_list.add_line(
@@ -301,7 +303,7 @@ impl Component {
 					canvas.canvas_to_window(self.pos + Vec2::new(2.0, 0.0)),
 					0xffffffff
 				)
-					.thickness(config::COMPONENT_THICKNESS)
+					.thickness(th)
 					.build();
 			},
 			CompKind::Input { state: _ } => {
@@ -310,7 +312,7 @@ impl Component {
 					canvas.canvas_to_window(self.pos + Vec2::new(2.0, 0.0)),
 					0xffffffff
 				)
-					.thickness(config::COMPONENT_THICKNESS)
+					.thickness(th)
 					.build();
 
 				draw_list.add_line(
@@ -318,7 +320,7 @@ impl Component {
 					canvas.canvas_to_window(self.pos + Vec2::new(2.0, 2.0)),
 					0xffffffff
 				)
-					.thickness(config::COMPONENT_THICKNESS)
+					.thickness(th)
 					.build();
 
 				draw_list.add_line(
@@ -326,7 +328,7 @@ impl Component {
 					canvas.canvas_to_window(self.pos + Vec2::new(0.0, 2.0)),
 					0xffffffff
 				)
-					.thickness(config::COMPONENT_THICKNESS)
+					.thickness(th)
 					.build();
 
 				draw_list.add_line(
@@ -334,7 +336,7 @@ impl Component {
 					canvas.canvas_to_window(self.pos + Vec2::new(0.0, 0.0)),
 					0xffffffff
 				)
-					.thickness(config::COMPONENT_THICKNESS)
+					.thickness(th)
 					.build();
 			}
 		}
