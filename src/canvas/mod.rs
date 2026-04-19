@@ -1,4 +1,4 @@
-use std::{fmt::Debug, thread::{self, JoinHandle}};
+use std::{fmt::{Debug, format}, thread::{self, JoinHandle}};
 
 use glam::IVec2;
 use rmp_serde::Serializer;
@@ -178,10 +178,12 @@ impl Canvas {
 		ui.text(format!("zoom: {}", self.inner.zoom));
 		let pos = self.inner.window_to_canvas(ui.io().mouse_pos.into());
 		ui.text(format!("mouse ({}, {})", pos.x, pos.y));
+		ui.text(format!("generation #{}", self.update_generation));
 
 		let coord = self.inner.window_to_canvas(ui.io().mouse_pos.into());
 		if self.nodes.count_nodes(coord) > 0 {
 			ui.text(format!("{:?} is driven: {}", coord, check_driven(&self.nodes.node_lookup, &mut self.nodes.node_storage, &self.wires, &self.comps, coord, &mut self.update_generation, true)));
+			self.update_generation += 1;
 		}
 
 		if let Some(_) = ui.begin_popup_context_window() {
