@@ -1,8 +1,12 @@
 use imgui::Ui;
+use serde::{Deserialize, Serialize};
 
-use crate::{canvas::{CanvasInner, NodeHandler, NodeKey, NodeOwner, Vec2, WireKey, WireStorage, component::Node}, config};
+use crate::{canvas::{CanvasInner, NodeHandler, NodeOwner, Vec2, nodes::{Node, NodeKey}}, config};
 
-#[derive(Debug)]
+pub type WireStorage = typed_generational_arena::StandardArena<Wire>;
+pub type WireKey = typed_generational_arena::StandardIndex<Wire>;
+
+#[derive(Debug, Deserialize, Serialize)]
 pub struct Wire {
 	pub start: Vec2,
 	pub end: Vec2,
@@ -76,6 +80,7 @@ impl Wire {
 	}
 }
 
+#[derive(Serialize, Deserialize)]
 pub struct Wires {
 	pub wires: WireStorage,
 }

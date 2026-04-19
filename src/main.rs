@@ -249,10 +249,11 @@ impl ApplicationHandler for App {
 						.position([0.0, 0.0], Condition::Always)
 						.size([1280.0, 720.0], Condition::Always)
 						.flags(WindowFlags::NO_BACKGROUND | WindowFlags::NO_MOVE | WindowFlags::NO_DECORATION |
-							WindowFlags::NO_SCROLLBAR | WindowFlags::NO_SCROLLBAR | WindowFlags::NO_SCROLL_WITH_MOUSE);
+							WindowFlags::NO_SCROLLBAR | WindowFlags::NO_SCROLLBAR | WindowFlags::NO_SCROLL_WITH_MOUSE)
+						.menu_bar(true);
 
 					imw.build(|| {
-						window.canvas.draw(ui);
+						window.canvas.draw(ui, &window.device, &window.surface_desc);
 					});
 				}
 

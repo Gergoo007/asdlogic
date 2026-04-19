@@ -1,7 +1,9 @@
+use serde::{Deserialize, Serialize};
 use wgpu::ShaderModuleDescriptor;
 
 use crate::{canvas::{Immediates, Vec2}, config};
 
+#[derive(Serialize, Deserialize)]
 pub struct CanvasInner {
 	pub pan: Vec2,
 	pub zoom: f32,
@@ -10,12 +12,15 @@ pub struct CanvasInner {
 	pub wire_horiz: bool,
 
 		size: Vec2,
-		pipeline: wgpu::RenderPipeline,
+
+		#[serde(skip)]
+		pipeline: Option<wgpu::RenderPipeline>, // TODO: MaybeUninit ha nagyon lelassítaná
+
 		lastmouse: Option<Vec2>,
 }
 
 impl CanvasInner {
-	pub fn new(size: &Vec2, device: &wgpu::Device, surface_desc: &wgpu::SurfaceConfiguration) -> Self {
+	pub fn create_pipeline(&mut self, device: &wgpu::Device, surface_desc: &wgpu::SurfaceConfiguration) {
 		let pipeline_layout =
 			device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
 				label: Some("Render Pipeline Layout"),
@@ -66,16 +71,22 @@ impl CanvasInner {
 			cache: None,
 		});
 
-		Self {
+		self.pipeline.replace(pipeline);
+	}
+
+	pub fn new(size: &Vec2, device: &wgpu::Device, surface_desc: &wgpu::SurfaceConfiguration) -> Self {
+		let mut s = Self {
 			size: Vec2::new(size.x, size.y),
 			pan: Vec2::default(),
 			zoom: 1.0,
-			pipeline,
+			pipeline: None,
 			lastmouse: None,
 			compid: 0,
 			grab_mouse_offset: None,
 			wire_horiz: false,
-		}
+		};
+		s.create_pipeline(device, surface_desc);
+		s
 	}
 
 	pub fn record_mouse(&mut self, pos: &Vec2) {
@@ -141,7 +152,7 @@ impl CanvasInner {
 			zoom: self.zoom,
 		};
 
-		rpass.set_pipeline(&self.pipeline);
+		rpass.set_pipeline(self.pipeline.as_ref().unwrap());
 		rpass.set_immediates(0, bytemuck::bytes_of(&turip));
 		let cols = self.size.x / gsz + 1.0;
 		let rows = self.size.y / gsz + 1.0;

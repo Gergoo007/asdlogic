@@ -1,28 +1,24 @@
-use std::{collections::HashMap, fmt::{Debug}};
+use std::{fmt::Debug, thread::{self, JoinHandle}};
 
 use glam::IVec2;
+use rmp_serde::Serializer;
+use serde::{Deserialize, Serialize};
 use strum::{EnumMessage, IntoEnumIterator};
 
-use crate::{canvas::{component::{CompKind, Component, Node}, inner::CanvasInner, logic::LL, wires::{Wire, Wires}}, config};
+use crate::{canvas::{component::{CompKind, Component}, inner::CanvasInner, nodes::{NodeHandler, check_driven, set_nodes}, wires::{Wire, WireKey, Wires}}, config};
 
 mod component;
 mod wires;
 mod inner;
 mod logic;
+mod nodes;
 
 pub type Vec2 = glam::Vec2;
-
-pub type NodeStorage = typed_generational_arena::StandardArena<Node>;
-pub type NodeKey = typed_generational_arena::StandardIndex<Node>;
-pub type NodeLookup = HashMap<IVec2, Vec<NodeKey>>;
 
 pub type CompStorage = typed_generational_arena::StandardArena<Component>;
 pub type CompKey = typed_generational_arena::StandardIndex<Component>;
 
-pub type WireStorage = typed_generational_arena::StandardArena<Wire>;
-pub type WireKey = typed_generational_arena::StandardIndex<Wire>;
-
-#[derive(PartialEq, Clone, Copy, Debug)]
+#[derive(PartialEq, Clone, Copy, Debug, Serialize, Deserialize)]
 pub enum NodeOwner {
 	Wire(WireKey),
 	Comp(CompKey),
@@ -32,217 +28,26 @@ fn vec2int(float: Vec2) -> IVec2 {
 	IVec2 { x: float.x as i32, y: float.y as i32 }
 }
 
+#[derive(Default, PartialEq, Clone, Copy)]
+enum FileAction {
+	Save,
+	Load,
+	#[default]
+	None
+}
+
+#[derive(Serialize, Deserialize)]
 pub struct Canvas {
 	pub inner: CanvasInner,
 	pub comps: CompStorage,
 	pub wires: Wires,
 	pub nodes: NodeHandler,
 	pub update_generation: u32,
-}
 
-pub struct NodeHandler {
-	pub node_storage: NodeStorage,
-	pub node_lookup: NodeLookup,
-}
-
-fn check_driven(node_lookup: &NodeLookup, node_storage: &mut NodeStorage, wires: &Wires, comps: &CompStorage, at: Vec2, generation: &mut u32, inc_gen: bool) -> bool {
-	if inc_gen {
-		*generation += 1;
-	}
-
-	for node in &node_lookup[&vec2int(at)] {
-		let k = *node;
-		let node = &mut node_storage[k];
-
-		let oldgen = node.generation;
-
-		node.generation = *generation;
-
-		if node.output {
-			return true;
-		}
-
-		// Itt már jártam
-		if oldgen == *generation {
-			return false;
-		}
-
-		if let Some(NodeOwner::Wire(w)) = node.owner {
-			// Ha vezeték, akkor a másik node-ot is be kell állítani
-			if k == wires.wires[w].startnode.unwrap() {
-				if check_driven(node_lookup, node_storage, wires, comps, wires.wires[w].end, generation, false) {
-					return true;
-				}
-			} else if k == wires.wires[w].endnode.unwrap() {
-				if check_driven(node_lookup, node_storage, wires, comps, wires.wires[w].start, generation, false) {
-					return true;
-				}
-			} else {
-				unreachable!("he????");
-			}
-		}
-	}
-	return false;
-}
-
-// Beállítja az összes Node logikai értékét
-// Külön eset ha LL::U-ra kell beállítani, mivel akkor végig fog menni az összes csatlakozáson megnézni hogy
-// meg van-e hajtva a hálózat. Ha meg van, akkor nem csinál semmit.
-pub fn set_nodes(node_lookup: &NodeLookup, node_storage: &mut NodeStorage, wires: &Wires, comps: &CompStorage, at: Vec2, generation: &mut u32, ll: LL, inc_gen: bool) {
-	// Itt kell lecsekkolni hogy lebegőnek kell-e lennie ezeknek a Node-oknak
-	if ll == LL::U && inc_gen {
-		if check_driven(node_lookup, node_storage, wires, comps, at, generation, true) {
-			return;
-		}
-	}
-
-	if inc_gen {
-		*generation += 1;
-	}
-
-	for node in &node_lookup[&vec2int(at)] {
-		let k = *node;
-		let node = &mut node_storage[k];
-
-		if node.generation == *generation {
-			if node.logic_lvl != ll {
-				eprintln!("Short circuit! {:?} vs {:?}", node.logic_lvl, ll);
-			}
-			return;
-		}
-
-		node.logic_lvl = ll;
-		node.generation = *generation;
-
-		if let Some(NodeOwner::Wire(w)) = node.owner {
-			// Ha vezeték, akkor a másik node-ot is be kell állítani
-			if k == wires.wires[w].startnode.unwrap() {
-				set_nodes(node_lookup, node_storage, wires, comps, wires.wires[w].end, generation, ll, false);
-			} else if k == wires.wires[w].endnode.unwrap() {
-				set_nodes(node_lookup, node_storage, wires, comps, wires.wires[w].start, generation, ll, false);
-			} else {
-				unreachable!("he????");
-			}
-		} else if let Some(NodeOwner::Comp(c)) = node.owner {
-			// Ha pedig komponens, akkor update-elni kell azt
-			comps[c].update(generation, node_lookup, node_storage, wires, comps);
-		}
-	}
-}
-
-impl NodeHandler {
-	pub fn new() -> Self {
-		Self {
-			node_storage: NodeStorage::new(),
-			node_lookup: NodeLookup::new(),
-		}
-	}
-
-	pub fn add_node(&mut self, n: Node) -> NodeKey {
-		let pos = n.pos;
-		let output = n.output;
-		let idx = self.node_storage.insert(n);
-		self.node_lookup.entry(vec2int(pos)).and_modify(|v| {
-			// Ha már van itt Node, akkor az új Node is felveszi az itt lévő Node-ok logikai értékét
-			let ll = self.node_storage[idx].logic_lvl;
-			v.push(idx);
-			for v in v.iter() {
-				if !self.node_storage[*v].logic_lvl.merge(ll) {
-					if output {
-						unreachable!("Short circuit when adding new node!");
-					}
-				}
-			}
-		}).or_insert(vec![idx]);
-		idx
-	}
-
-	pub fn count_nodes(&self, at: Vec2) -> usize {
-		if self.node_lookup.contains_key(&vec2int(at)) {
-			self.node_lookup[&vec2int(at)].len()
-		} else {
-			0
-		}
-	}
-
-	pub fn remove_node(&mut self, at: Vec2, owner: NodeOwner) -> Node {
-		let vals = self.node_lookup.get_mut(&vec2int(at)).unwrap();
-		let mut node = None;
-
-		// Az extract_if eltávolítja az adott NodeKey-t a HashMap vektorából,
-		// a closure-ön belül pedig a NodeStorage Arénából is kiszedem
-
-		vals.retain_mut(|e| {
-			let remove = *self.node_storage[*e].owner.as_ref().unwrap() == owner;
-			if remove {
-				node = self.node_storage.remove(*e);
-			}
-			!remove
-		});
-
-		// Ha ez volt az ujtolsó Node ezen a koordinátán, akkor
-		// fel is szabadítom ezt a bejegyzést a HashMap-ből
-		if vals.len() == 0 {
-			self.node_lookup.remove(&vec2int(at));
-		}
-
-		node.unwrap()
-	}
-
-	pub fn query_node(&self, at: Vec2) -> LL {
-		if self.node_lookup.contains_key(&vec2int(at)) {
-			self.node_storage[self.node_lookup[&vec2int(at)][0]].logic_lvl
-		} else {
-			LL::U
-		}
-	}
-
-	pub fn move_node(&mut self, nidx: NodeKey, by: Vec2, owner: NodeOwner, wires: &Wires, comps: &CompStorage, generation: &mut u32) {
-		let oldpos = self.node_storage[nidx].pos;
-		let newpos = oldpos + by;
-		let k = vec2int(oldpos);
-
-		// Ha van már Node a cél koordinátán akkor ez tárolja el az értékét
-		let mut destination_logic_level = None;
-
-		// Koordináták frissítése a HashMap-ben:
-		// 1.1. ki kell venni a releváns NodeKey-eket az adott koordinátából
-		let mut iter = self.node_lookup.get_mut(&k).unwrap().extract_if(.., |v| {
-			self.node_storage[*v].owner == Some(owner)
-		});
-		let node = iter.next().unwrap();
-
-		assert!(iter.next().is_none());
-
-		drop(iter);
-
-		// 1.2. ha nem maradt másik Node akkor a Vektor felszabadításra kerül
-		if self.node_lookup.get_mut(&k).unwrap().len() == 0 {
-			self.node_lookup.remove(&k);
-		}
-
-		// 2. vissza kell tenni az új koordinátára a kivett értékeket
-		self.node_lookup.entry(vec2int(newpos)).and_modify(|nodekeys| {
-			destination_logic_level.replace(self.node_storage[nodekeys[0]].logic_lvl);
-			nodekeys.push(node);
-		}).or_insert(vec![ node ]);
-
-		// Koordináták frissítése az Arénában
-		self.node_storage[nidx].pos += by;
-
-		// Az esetleges új kapcsolatok feldolgozása
-		let ll = self.node_storage[nidx].logic_lvl;
-		set_nodes(&self.node_lookup, &mut self.node_storage, wires, comps, newpos, generation, ll, true);
-
-		// Ha nincs meghajtva ez a Node akkor legyen LL::U az értéke
-		if !check_driven(&self.node_lookup, &mut self.node_storage, wires, comps, newpos, generation, true) {
-			self.node_storage[nidx].logic_lvl = LL::U;
-		} else {
-			if let Some(lvl) = destination_logic_level {
-				self.node_storage[nidx].logic_lvl = lvl;
-			}
-		}
-	}
+	#[serde(skip)]
+	dialog_thread: Option<JoinHandle<String>>,
+	#[serde(skip)]
+	action: FileAction,
 }
 
 #[repr(C)]
@@ -268,6 +73,8 @@ impl Canvas {
 			wires: Wires::new(),
 			nodes: NodeHandler::new(),
 			update_generation: 0,
+			dialog_thread: None,
+			action: FileAction::None,
 		};
 		
 		s.add_comp(CompKind::OrGate, Vec2::new(0.0, -5.0));
@@ -285,18 +92,89 @@ impl Canvas {
 		s
 	}
 
-	pub fn draw(&mut self, ui: &imgui::Ui) {
-		let io = ui.io();
+	pub fn draw(&mut self, ui: &imgui::Ui, device: &wgpu::Device, surface_desc: &wgpu::SurfaceConfiguration) {
+		let mut flag = false;
 
-		// Zoom kezelése
-		self.inner.zoom = self.inner.zoom + ((io.mouse_wheel * 1024.0).round() / 1024.0) / 20.0 * self.inner.zoom;
+		if let Some(_menu1) = ui.begin_menu_bar() {
+			if let Some(_menu3) = ui.begin_menu("File") {
+				if ui.menu_item("Save") {
+					flag = true;
+					self.action = FileAction::Save;
+				}
 
-		// Pan
-		if io.mouse_down[imgui::MouseButton::Middle as usize] {
-			self.inner.pan += Vec2::from(io.mouse_delta) / self.inner.zoom;
+				if ui.menu_item("Load") {
+					flag = true;
+					self.action = FileAction::Load;
+				}
+			}
 		}
 
-		ui.text(format!("FPS: {:.2} ({:.2} ms)", 1.0 / io.delta_time, io.delta_time));
+		if ui.is_key_down(imgui::Key::LeftCtrl) && ui.is_key_pressed_no_repeat(imgui::Key::S) {
+			flag = true;
+			self.action = FileAction::Save;
+		}
+
+		if ui.is_key_down(imgui::Key::LeftCtrl) && ui.is_key_pressed_no_repeat(imgui::Key::O) {
+			flag = true;
+			self.action = FileAction::Load;
+		}
+
+		if flag {
+			let action = self.action;
+			self.dialog_thread.replace(
+				thread::spawn(move || {
+					let dialog =
+						if action == FileAction::Load {
+							rfd::FileDialog::new().pick_file()
+						} else {
+							rfd::FileDialog::new().save_file()
+						};
+
+					let str = dialog.unwrap().to_str().unwrap().to_string();
+					str
+				})
+			);
+		}
+
+		let mut path = None;
+
+		if self.action != FileAction::None {
+			if self.dialog_thread.as_ref().unwrap().is_finished() {
+				let turi = self.dialog_thread.take().unwrap();
+				path.replace(turi.join().unwrap());
+			}
+		}
+
+		match self.action {
+			FileAction::Save => {
+				if let Some(path) = path.take() {
+					println!("Saving to {}", path);
+					self.save(path.as_str());
+					self.action = FileAction::None;
+				}
+			}
+
+			FileAction::Load => {
+				if let Some(path) = path.take() {
+					println!("Loading from {}", path);
+					let second = Self::load(path.as_str(), device, surface_desc);
+					*self = second;
+					self.action = FileAction::None;
+				}
+			}
+
+			FileAction::None => {}
+		}
+
+		// Zoom kezelése
+		self.inner.zoom = self.inner.zoom + ((ui.io().mouse_wheel * 1024.0).round() / 1024.0) / 20.0 * self.inner.zoom;
+
+		// Pan
+		if ui.io().mouse_down[imgui::MouseButton::Middle as usize] {
+			self.inner.pan += Vec2::from(ui.io().mouse_delta) / self.inner.zoom;
+		}
+
+		ui.text(format!("FPS: {:.2} ({:.2} ms)", 1.0 / ui.io().delta_time, ui.io().delta_time));
 		ui.text(format!("zoom: {}", self.inner.zoom));
 		let pos = self.inner.window_to_canvas(ui.io().mouse_pos.into());
 		ui.text(format!("mouse ({}, {})", pos.x, pos.y));
@@ -307,7 +185,7 @@ impl Canvas {
 		}
 
 		if let Some(_) = ui.begin_popup_context_window() {
-			self.inner.record_mouse(&io.mouse_pos.into());
+			self.inner.record_mouse(&ui.io().mouse_pos.into());
 
 			if let Some(_) = ui.begin_menu("Spawn") {
 				if let Some(_) = ui.begin_menu("Logic Gate") {
@@ -392,6 +270,22 @@ impl Canvas {
 			set_nodes(&self.nodes.node_lookup, &mut self.nodes.node_storage, &self.wires, &self.comps, npos, &mut self.update_generation, ll, true);
 		}
 		self.inner.compid += 1;
+	}
+
+	pub fn save(&self, file: &str) {
+		let mut buf = Vec::new();
+		self.serialize(&mut Serializer::new(&mut buf)).expect("Failed to serialize save file!");
+		std::fs::write(file, buf).expect("Failed to write save file!");
+	}
+
+	pub fn load(file: &str, device: &wgpu::Device, surface_desc: &wgpu::SurfaceConfiguration) -> Self {
+		let file = std::fs::File::open(file).expect("Failed to open save file!");
+		let mut reader = std::io::BufReader::new(file);
+		let mut deser = rmp_serde::Deserializer::new(&mut reader);
+
+		let mut almost = Self::deserialize(&mut deser).expect("Failed to deserialize save file!");
+		almost.inner.create_pipeline(device, surface_desc);
+		almost
 	}
 }
 

@@ -1,7 +1,9 @@
 use std::ops;
 
+use serde::{Deserialize, Serialize};
+
 // Logikai szint (Logic level)
-#[derive(PartialEq, Debug, Clone, Copy)]
+#[derive(PartialEq, Debug, Clone, Copy, Serialize, Deserialize)]
 pub enum LL {
 	H, // High
 	L, // Low

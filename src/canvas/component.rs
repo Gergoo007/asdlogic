@@ -1,84 +1,9 @@
-use crate::{canvas::{CanvasInner, CompKey, CompStorage, NodeHandler, NodeKey, NodeLookup, NodeOwner, NodeStorage, Vec2, logic::LL, set_nodes, wires::{Wire, Wires}}, config::{self, GRID_SPACING}};
+use serde::{Deserialize, Serialize};
 
-#[derive(PartialEq, Debug, Clone)]
-pub struct Node {
-	pub pos: Vec2,
-	pub owner: Option<NodeOwner>,
-	pub logic_lvl: LL,
-	pub generation: u32,
-	pub output: bool,
-}
-
-impl Node {
-	pub fn draw(&self, nodeid: NodeKey, inner: &mut CanvasInner, ui: &imgui::Ui)
-	-> (Option<Wire>, Option<Wire>) {
-		let draw_list = ui.get_window_draw_list();
-		draw_list.add_circle(inner.canvas_to_window(self.pos), config::NODE_RADIUS, 0xffffffff).filled(true).build();
-
-		let offset = config::NODE_HITBOX / 2.0;
-
-		ui.set_cursor_pos(inner.canvas_to_window(self.pos - offset));
-
-		ui.invisible_button(format!("node{:?}", nodeid), inner.canvas_to_window_size(self.pos - offset, config::NODE_HITBOX));
-
-		let mut w1: Wire = Wire::skeleton(Vec2::new(0.0, 0.0), Vec2::new(0.0, 0.0));
-		let mut w2: Wire = Wire::skeleton(Vec2::new(0.0, 0.0), Vec2::new(0.0, 0.0));
-
-		let active = ui.is_item_active();
-		let deactivated = ui.is_item_deactivated();
-
-		if active {
-			draw_list.add_rect(inner.canvas_to_window(self.pos - offset), inner.canvas_to_window(self.pos - offset) + inner.canvas_to_window_size(self.pos - offset, config::NODE_HITBOX), 0xffffffff)
-				.build();
-		}
-
-		if active || deactivated {
-			let from = self.pos;
-			let to = inner.window_to_canvas(ui.io().mouse_pos.into());
-			let vec = to - from;
-
-			// 0 ha vízszintesen kezdte el húzni a felhasználó,
-			// 1 ha függőlegesen
-			let len = (to - from).length();
-			if len == inner.zoom {
-				inner.wire_horiz = (to - from).x.abs() != 0.0;
-			}
-
-			if inner.wire_horiz {
-				// Vízszintes először
-				w1 = Wire::skeleton(from, Vec2::new(to.x, from.y));
-				w2 = Wire::skeleton(Vec2::new(to.x, from.y), to);
-
-				if vec.x == 0.0 {
-					inner.wire_horiz = !inner.wire_horiz;
-				}
-			} else {
-				// Függőleges először
-				w1 = Wire::skeleton(from, Vec2::new(from.x, to.y));
-				w2 = Wire::skeleton(Vec2::new(from.x, to.y), to);
-
-				if vec.y == 0.0 {
-					inner.wire_horiz = !inner.wire_horiz;
-				}
-			}
-		}
-
-		if active {
-			w1.draw(inner, &draw_list, None);
-			w2.draw(inner, &draw_list, None);
-		}
-
-		let mut ret = (None, None);
-		if deactivated {
-			if w1.start != w1.end { ret.0.replace(w1); }
-			if w2.start != w2.end { ret.1.replace(w2); }
-		}
-		return ret;
-	}
-}
+use crate::{canvas::{CanvasInner, CompKey, CompStorage, NodeHandler, NodeOwner, Vec2, logic::LL, nodes::{Node, NodeKey, NodeLookup, NodeStorage}, set_nodes, wires::Wires}, config::{self, GRID_SPACING}};
 
 #[allow(unused)]
-#[derive(strum::EnumIter, strum::EnumMessage, Debug, PartialEq, Clone)]
+#[derive(strum::EnumIter, strum::EnumMessage, Debug, PartialEq, Clone, Serialize, Deserialize)]
 pub enum CompKind {
 	#[strum(message = "AND Gate")]	AndGate,
 	#[strum(message = "OR Gate")]	OrGate,
@@ -143,7 +68,7 @@ impl CompKind {
 	}
 }
 
-#[derive(PartialEq, Clone)]
+#[derive(PartialEq, Clone, Serialize, Deserialize)]
 #[allow(unused)]
 pub struct Component {
 	pub kind: CompKind,
