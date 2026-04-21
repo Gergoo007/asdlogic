@@ -1,6 +1,6 @@
 use serde::{Deserialize, Serialize};
 
-use crate::{canvas::{CanvasInner, CompKey, CompStorage, NodeHandler, NodeOwner, Vec2, logic::LL, nodes::{Node, NodeKey, NodeLookup, NodeStorage}, set_nodes, wires::Wires}, config::{self, GRID_SPACING}};
+use crate::{canvas::{CanvasInner, CompKey, CompStorage, NodeHandler, ElemIndex, Vec2, logic::LL, nodes::{Node, NodeKey, NodeLookup, NodeStorage}, set_nodes, wires::Wires}, config::{self, GRID_SPACING}};
 
 #[allow(unused)]
 #[derive(strum::EnumIter, strum::EnumMessage, Debug, PartialEq, Clone, Serialize, Deserialize)]
@@ -15,7 +15,8 @@ pub enum CompKind {
 impl CompKind {
 	pub const fn hitbox(&self) -> Vec2 {
 		match self {
-			CompKind::AndGate | CompKind::OrGate => Vec2::new(4.0, 4.0),
+			CompKind::AndGate => Vec2::new(4.0, 4.0),
+			CompKind::OrGate => Vec2::new(5.0, 4.0),
 			CompKind::NandGate => Vec2::new(5.0, 4.0),
 			CompKind::XorGate => Vec2::new(5.0, 4.0),
 			CompKind::Input { state: _ } => Vec2::new(2.0, 2.0),
@@ -76,6 +77,7 @@ pub struct Component {
 	pub nodes: Vec<NodeKey>,
 	pub id: u64,
 	pub move_request: Option<Vec2>,
+	pub selected: bool,
 }
 
 impl Component {
@@ -88,6 +90,7 @@ impl Component {
 			nodes,
 			id,
 			move_request: None,
+			selected: false,
 		}
 	}
 
@@ -101,6 +104,39 @@ impl Component {
 
 		let th = config::COMPONENT_THICKNESS * canvas.zoom;
 
+		// let color = if self.selected { 0xff00ffff } else { 0xffffffff };
+		let color = 0xffffffff;
+		let selectcolor = 0xffaaaaaa;
+
+		let hitbox = self.kind.hitbox();
+		let padding = 10.0 * canvas.zoom;
+
+		if self.selected {
+			draw_list.add_line(
+				Vec2::new(-padding, -padding) + canvas.canvas_to_window(self.pos),
+				Vec2::new(padding, -padding) + canvas.canvas_to_window(self.pos + Vec2::new(hitbox.x, 0.0)),
+				selectcolor
+			).thickness(th).build();
+
+			draw_list.add_line(
+				Vec2::new(padding, -padding) + canvas.canvas_to_window(self.pos + Vec2::new(hitbox.x, 0.0)),
+				Vec2::new(padding, padding) + canvas.canvas_to_window(self.pos + hitbox),
+				selectcolor
+			).thickness(th).build();
+
+			draw_list.add_line(
+				Vec2::new(padding, padding) + canvas.canvas_to_window(self.pos + hitbox),
+				Vec2::new(-padding, padding) + canvas.canvas_to_window(self.pos + Vec2::new(0.0, hitbox.y)),
+				selectcolor
+			).thickness(th).build();
+
+			draw_list.add_line(
+				Vec2::new(-padding, padding) + canvas.canvas_to_window(self.pos + Vec2::new(0.0, hitbox.y)),
+				Vec2::new(-padding, -padding) + canvas.canvas_to_window(self.pos),
+				selectcolor
+			).thickness(th).build();
+		}
+
 		match self.kind {
 			CompKind::AndGate => {
 				draw_list.add_bezier_curve(
@@ -108,7 +144,7 @@ impl Component {
 					canvas.canvas_to_window(self.pos + Vec2::new(4.67, 4.0 - curve_y_offset)),
 					canvas.canvas_to_window(self.pos + Vec2::new(4.67, 0.0 - curve_y_offset)),
 					canvas.canvas_to_window(self.pos + Vec2::new(2.00, 0.0 - curve_y_offset)),
-					0xffffffff
+					color
 				)
 					.thickness(th)
 					.build();
@@ -116,7 +152,7 @@ impl Component {
 				draw_list.add_line(
 					canvas.canvas_to_window(self.pos + Vec2::new(0.0, 4.0)),
 					canvas.canvas_to_window(self.pos + Vec2::new(2.0, 4.0)),
-					0xffffffff
+					color
 				)
 					.thickness(th)
 					.build();
@@ -124,7 +160,7 @@ impl Component {
 				draw_list.add_line(
 					canvas.canvas_to_window(self.pos + Vec2::new(0.0, 0.0)),
 					canvas.canvas_to_window(self.pos + Vec2::new(2.0, 0.0)),
-					0xffffffff
+					color
 				)
 					.thickness(th)
 					.build();
@@ -132,7 +168,7 @@ impl Component {
 				draw_list.add_line(
 					canvas.canvas_to_window(self.pos + Vec2::new(0.0, 4.0)),
 					canvas.canvas_to_window(self.pos + Vec2::new(0.0, 0.0)),
-					0xffffffff
+					color
 				)
 					.thickness(th)
 					.build();
@@ -148,7 +184,7 @@ impl Component {
 						canvas.canvas_to_window(self.pos + Vec2::new(4.50, 4.0 - curve_y_offset)),
 						canvas.canvas_to_window(self.pos + Vec2::new(5.00, 2.0 - curve_y_offset)),
 						canvas.canvas_to_window(self.pos + Vec2::new(5.00, 2.0 - curve_y_offset)),
-						0xffffffff
+						color
 					)
 						.thickness(th)
 						.build();
@@ -158,7 +194,7 @@ impl Component {
 						canvas.canvas_to_window(self.pos + Vec2::new(4.50, 0.0 - curve_y_offset)),
 						canvas.canvas_to_window(self.pos + Vec2::new(5.00, 2.0 - curve_y_offset)),
 						canvas.canvas_to_window(self.pos + Vec2::new(5.00, 2.0 - curve_y_offset)),
-						0xffffffff
+						color
 					)
 						.thickness(th)
 						.build();
@@ -171,7 +207,7 @@ impl Component {
 						canvas.canvas_to_window(self.pos + OFFSET + Vec2::new(1.30, 1.0 - curve_y_offset)),
 						canvas.canvas_to_window(self.pos + OFFSET + Vec2::new(1.30, 3.0 - curve_y_offset)),
 						canvas.canvas_to_window(self.pos + OFFSET + Vec2::new(0.00, 4.0 - curve_y_offset)),
-						0xffffffff
+						color
 					)
 						.thickness(th)
 						.build();
@@ -180,7 +216,7 @@ impl Component {
 				draw_list.add_line(
 					canvas.canvas_to_window(self.pos + OFFSET + Vec2::new(0.0, 4.0)),
 					canvas.canvas_to_window(self.pos + Vec2::new(2.0, 4.0)),
-					0xffffffff
+					color
 				)
 					.thickness(th)
 					.build();
@@ -188,7 +224,7 @@ impl Component {
 				draw_list.add_line(
 					canvas.canvas_to_window(self.pos + OFFSET + Vec2::new(0.0, 0.0)),
 					canvas.canvas_to_window(self.pos + Vec2::new(2.0, 0.0)),
-					0xffffffff
+					color
 				)
 					.thickness(th)
 					.build();
@@ -199,7 +235,7 @@ impl Component {
 					canvas.canvas_to_window(self.pos + Vec2::new(4.67, 4.0 - curve_y_offset)),
 					canvas.canvas_to_window(self.pos + Vec2::new(4.67, 0.0 - curve_y_offset)),
 					canvas.canvas_to_window(self.pos + Vec2::new(2.00, 0.0 - curve_y_offset)),
-					0xffffffff
+					color
 				)
 					.thickness(th)
 					.build();
@@ -207,7 +243,7 @@ impl Component {
 				draw_list.add_line(
 					canvas.canvas_to_window(self.pos + Vec2::new(0.0, 4.0)),
 					canvas.canvas_to_window(self.pos + Vec2::new(2.0, 4.0)),
-					0xffffffff
+					color
 				)
 					.thickness(th)
 					.build();
@@ -215,7 +251,7 @@ impl Component {
 				draw_list.add_line(
 					canvas.canvas_to_window(self.pos + Vec2::new(0.0, 0.0)),
 					canvas.canvas_to_window(self.pos + Vec2::new(2.0, 0.0)),
-					0xffffffff
+					color
 				)
 					.thickness(th)
 					.build();
@@ -223,7 +259,7 @@ impl Component {
 				draw_list.add_line(
 					canvas.canvas_to_window(self.pos + Vec2::new(0.0, 4.0)),
 					canvas.canvas_to_window(self.pos + Vec2::new(0.0, 0.0)),
-					0xffffffff
+					color
 				)
 					.thickness(th)
 					.build();
@@ -231,7 +267,7 @@ impl Component {
 				draw_list.add_circle(
 					canvas.canvas_to_window(self.pos + Vec2::new(4.5, 2.0)),
 					canvas.zoom * (GRID_SPACING / 2.0),
-					0xffffffff
+					color
 				)
 					.thickness(th)
 					.build();
@@ -247,7 +283,7 @@ impl Component {
 						canvas.canvas_to_window(self.pos + Vec2::new(4.50, 4.0 - curve_y_offset)),
 						canvas.canvas_to_window(self.pos + Vec2::new(5.00, 2.0 - curve_y_offset)),
 						canvas.canvas_to_window(self.pos + Vec2::new(5.00, 2.0 - curve_y_offset)),
-						0xffffffff
+						color
 					)
 						.thickness(th)
 						.build();
@@ -257,7 +293,7 @@ impl Component {
 						canvas.canvas_to_window(self.pos + Vec2::new(4.50, 0.0 - curve_y_offset)),
 						canvas.canvas_to_window(self.pos + Vec2::new(5.00, 2.0 - curve_y_offset)),
 						canvas.canvas_to_window(self.pos + Vec2::new(5.00, 2.0 - curve_y_offset)),
-						0xffffffff
+						color
 					)
 						.thickness(th)
 						.build();
@@ -271,7 +307,7 @@ impl Component {
 						canvas.canvas_to_window(self.pos + so + OFFSET + Vec2::new(1.30, 1.0 - curve_y_offset)),
 						canvas.canvas_to_window(self.pos + so + OFFSET + Vec2::new(1.30, 3.0 - curve_y_offset)),
 						canvas.canvas_to_window(self.pos + so + OFFSET + Vec2::new(0.00, 4.0 - curve_y_offset)),
-						0xffffffff
+						color
 					)
 						.thickness(th)
 						.build();
@@ -284,7 +320,7 @@ impl Component {
 						canvas.canvas_to_window(self.pos + OFFSET + Vec2::new(1.30, 1.0 - curve_y_offset)),
 						canvas.canvas_to_window(self.pos + OFFSET + Vec2::new(1.30, 3.0 - curve_y_offset)),
 						canvas.canvas_to_window(self.pos + OFFSET + Vec2::new(0.00, 4.0 - curve_y_offset)),
-						0xffffffff
+						color
 					)
 						.thickness(th)
 						.build();
@@ -293,7 +329,7 @@ impl Component {
 				draw_list.add_line(
 					canvas.canvas_to_window(self.pos + so + OFFSET + Vec2::new(0.0, 4.0)),
 					canvas.canvas_to_window(self.pos + Vec2::new(2.0, 4.0)),
-					0xffffffff
+					color
 				)
 					.thickness(th)
 					.build();
@@ -301,7 +337,7 @@ impl Component {
 				draw_list.add_line(
 					canvas.canvas_to_window(self.pos + so + OFFSET + Vec2::new(0.0, 0.0)),
 					canvas.canvas_to_window(self.pos + Vec2::new(2.0, 0.0)),
-					0xffffffff
+					color
 				)
 					.thickness(th)
 					.build();
@@ -310,7 +346,7 @@ impl Component {
 				draw_list.add_line(
 					canvas.canvas_to_window(self.pos + Vec2::new(0.0, 0.0)),
 					canvas.canvas_to_window(self.pos + Vec2::new(2.0, 0.0)),
-					0xffffffff
+					color
 				)
 					.thickness(th)
 					.build();
@@ -318,7 +354,7 @@ impl Component {
 				draw_list.add_line(
 					canvas.canvas_to_window(self.pos + Vec2::new(2.0, 0.0)),
 					canvas.canvas_to_window(self.pos + Vec2::new(2.0, 2.0)),
-					0xffffffff
+					color
 				)
 					.thickness(th)
 					.build();
@@ -326,7 +362,7 @@ impl Component {
 				draw_list.add_line(
 					canvas.canvas_to_window(self.pos + Vec2::new(2.0, 2.0)),
 					canvas.canvas_to_window(self.pos + Vec2::new(0.0, 2.0)),
-					0xffffffff
+					color
 				)
 					.thickness(th)
 					.build();
@@ -334,7 +370,7 @@ impl Component {
 				draw_list.add_line(
 					canvas.canvas_to_window(self.pos + Vec2::new(0.0, 2.0)),
 					canvas.canvas_to_window(self.pos + Vec2::new(0.0, 0.0)),
-					0xffffffff
+					color
 				)
 					.thickness(th)
 					.build();
@@ -364,13 +400,13 @@ impl Component {
 		clicked
 	}
 
-	pub fn move_to(&mut self, to: Vec2, nodes: &mut NodeHandler, cidx: CompKey, wires: &Wires, comps: &CompStorage, generation: &mut u32) {
+	pub fn move_by(&mut self, by: Vec2, nodes: &mut NodeHandler, cidx: CompKey, wires: &Wires, comps: &CompStorage, generation: &mut u32) {
 		for nidx in &self.nodes {
-			nodes.move_node(*nidx, to - self.pos, NodeOwner::Comp(cidx), wires, comps, generation);
+			nodes.move_node(*nidx, by, ElemIndex::Comp(cidx), wires, comps, generation);
 			*generation += 1;
 		}
 
-		self.pos = to;
+		self.pos += by;
 	}
 
 	pub fn on_click(&mut self) {

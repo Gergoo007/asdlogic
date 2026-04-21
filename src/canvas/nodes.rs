@@ -3,7 +3,7 @@ use std::collections::HashMap;
 use glam::IVec2;
 use serde::{Deserialize, Serialize};
 
-use crate::{canvas::{CompStorage, NodeOwner, Vec2, inner::CanvasInner, logic::LL, vec2int, wires::{Wire, Wires}}, config};
+use crate::{canvas::{CompStorage, ElemIndex, Vec2, inner::CanvasInner, logic::LL, vec2int, wires::{Wire, Wires}}, config};
 
 pub type NodeStorage = typed_generational_arena::StandardArena<Node>;
 pub type NodeKey = typed_generational_arena::StandardIndex<Node>;
@@ -12,7 +12,7 @@ pub type NodeLookup = HashMap<IVec2, Vec<NodeKey>>;
 #[derive(PartialEq, Debug, Clone, Serialize, Deserialize)]
 pub struct Node {
 	pub pos: Vec2,
-	pub owner: Option<NodeOwner>,
+	pub owner: Option<ElemIndex>,
 	pub logic_lvl: LL,
 	pub generation: u32,
 	pub output: bool,
@@ -27,7 +27,6 @@ impl Node {
 
 	pub fn process(&self, nodeid: NodeKey, inner: &mut CanvasInner, ui: &imgui::Ui)
 	-> (Option<Wire>, Option<Wire>) {
-		let draw_list = ui.get_window_draw_list();
 		// draw_list.add_circle(inner.canvas_to_window(self.pos), config::NODE_RADIUS, 0xffffffff).filled(true).build();
 
 		let offset = config::NODE_HITBOX / 2.0;
@@ -43,7 +42,7 @@ impl Node {
 		let deactivated = ui.is_item_deactivated();
 
 		if active {
-			draw_list.add_rect(inner.canvas_to_window(self.pos - offset), inner.canvas_to_window(self.pos - offset) + inner.canvas_to_window_size(self.pos - offset, config::NODE_HITBOX), 0xffffffff)
+			ui.get_window_draw_list().add_rect(inner.canvas_to_window(self.pos - offset), inner.canvas_to_window(self.pos - offset) + inner.canvas_to_window_size(self.pos - offset, config::NODE_HITBOX), 0xffffffff)
 				.build();
 		}
 
@@ -79,8 +78,8 @@ impl Node {
 		}
 
 		if active {
-			w1.draw(inner, &draw_list, None);
-			w2.draw(inner, &draw_list, None);
+			w1.draw(inner, ui, None, None);
+			w2.draw(inner, ui, None, None);
 		}
 
 		let mut ret = (None, None);
@@ -103,6 +102,8 @@ pub fn check_driven(node_lookup: &NodeLookup, node_storage: &mut NodeStorage, wi
 		*generation += 1;
 	}
 
+	if !node_lookup.contains_key(&vec2int(at)) { return false; }
+
 	for node in &node_lookup[&vec2int(at)] {
 		let k = *node;
 		let node = &mut node_storage[k];
@@ -120,7 +121,7 @@ pub fn check_driven(node_lookup: &NodeLookup, node_storage: &mut NodeStorage, wi
 			return false;
 		}
 
-		if let Some(NodeOwner::Wire(w)) = node.owner {
+		if let Some(ElemIndex::Wire(w)) = node.owner {
 			// Ha vezeték, akkor a másik node-ot is be kell állítani
 			if k == wires.wires[w].startnode.unwrap() {
 				if check_driven(node_lookup, node_storage, wires, comps, wires.wires[w].end, generation, false) {
@@ -153,6 +154,8 @@ pub fn set_nodes(node_lookup: &NodeLookup, node_storage: &mut NodeStorage, wires
 		*generation += 1;
 	}
 
+	if !node_lookup.contains_key(&vec2int(at)) { return; }
+
 	for node in &node_lookup[&vec2int(at)] {
 		let k = *node;
 		let node = &mut node_storage[k];
@@ -167,7 +170,7 @@ pub fn set_nodes(node_lookup: &NodeLookup, node_storage: &mut NodeStorage, wires
 		node.logic_lvl = ll;
 		node.generation = *generation;
 
-		if let Some(NodeOwner::Wire(w)) = node.owner {
+		if let Some(ElemIndex::Wire(w)) = node.owner {
 			// Ha vezeték, akkor a másik node-ot is be kell állítani
 			if k == wires.wires[w].startnode.unwrap() {
 				set_nodes(node_lookup, node_storage, wires, comps, wires.wires[w].end, generation, ll, false);
@@ -176,7 +179,7 @@ pub fn set_nodes(node_lookup: &NodeLookup, node_storage: &mut NodeStorage, wires
 			} else {
 				unreachable!("he????");
 			}
-		} else if let Some(NodeOwner::Comp(c)) = node.owner {
+		} else if let Some(ElemIndex::Comp(c)) = node.owner {
 			// Ha pedig komponens, akkor update-elni kell azt
 			comps[c].update(generation, node_lookup, node_storage, wires, comps);
 		}
@@ -218,7 +221,7 @@ impl NodeHandler {
 		}
 	}
 
-	pub fn remove_node(&mut self, at: Vec2, owner: NodeOwner) -> Node {
+	pub fn remove_node(&mut self, at: Vec2, owner: ElemIndex) -> Node {
 		let vals = self.node_lookup.get_mut(&vec2int(at)).unwrap();
 		let mut node = None;
 
@@ -250,7 +253,7 @@ impl NodeHandler {
 		}
 	}
 
-	pub fn move_node(&mut self, nidx: NodeKey, by: Vec2, owner: NodeOwner, wires: &Wires, comps: &CompStorage, generation: &mut u32) {
+	pub fn move_node(&mut self, nidx: NodeKey, by: Vec2, owner: ElemIndex, wires: &Wires, comps: &CompStorage, generation: &mut u32) {
 		let oldpos = self.node_storage[nidx].pos;
 		let newpos = oldpos + by;
 		let k = vec2int(oldpos);
@@ -265,7 +268,7 @@ impl NodeHandler {
 		});
 		let node = iter.next().unwrap();
 
-		assert!(iter.next().is_none());
+		// assert!(iter.next().is_none());
 
 		drop(iter);
 
@@ -288,7 +291,7 @@ impl NodeHandler {
 		set_nodes(&self.node_lookup, &mut self.node_storage, wires, comps, newpos, generation, ll, true);
 
 		// Ha nincs meghajtva ez a Node akkor legyen LL::U az értéke
-		if !check_driven(&self.node_lookup, &mut self.node_storage, wires, comps, newpos, generation, true) {
+		if !check_driven(&self.node_lookup, &mut self.node_storage, wires, comps, newpos, generation, true) && !self.node_storage[nidx].output {
 			self.node_storage[nidx].logic_lvl = LL::U;
 		} else {
 			if let Some(lvl) = destination_logic_level {

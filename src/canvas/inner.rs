@@ -113,15 +113,12 @@ impl CanvasInner {
 	pub fn window_to_canvas(&self, pos: Vec2) -> Vec2 {
 		let center = self.size / 2.0;
 
-		// Ennyivel van elcsúszva a grid, tehát a pontok amikhez a koordinátát snappelni kell
-		let panoffset = self.pan % config::GRID_SPACING;
-
 		// Ennyi grid koordinátával van elcsúsztatva a canvas
 		let pancoord = self.pan / config::GRID_SPACING;
 
 		let grid_spacing_zoom = config::GRID_SPACING * self.zoom;
 
-		return ((((pos - center) - panoffset) / grid_spacing_zoom) - pancoord).round();
+		return (((pos - center) / grid_spacing_zoom) - pancoord).round();
 	}
 
 	pub fn canvas_to_window_size(&self, pos: Vec2, size: Vec2) -> Vec2 {

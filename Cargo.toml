@@ -22,3 +22,6 @@ strum = { version = "0.28", features = ["derive"] }
 typed-generational-arena = { version = "0.2.9", features = [ "serde" ] }
 wgpu = "29.0.1"
 winit = "0.30.13"
+
+# [profile.release]
+# debug = true

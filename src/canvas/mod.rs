@@ -1,11 +1,12 @@
-use std::{fmt::{Debug, format}, thread::{self, JoinHandle}};
+use std::{fmt::Debug, thread::{self, JoinHandle}};
 
 use glam::IVec2;
+use imgui::{MouseButton, Key};
 use rmp_serde::Serializer;
 use serde::{Deserialize, Serialize};
 use strum::{EnumMessage, IntoEnumIterator};
 
-use crate::{canvas::{component::{CompKind, Component}, inner::CanvasInner, nodes::{NodeHandler, check_driven, set_nodes}, wires::{Wire, WireKey, Wires}}, config};
+use crate::canvas::{component::{CompKind, Component}, inner::CanvasInner, nodes::{NodeHandler, check_driven, set_nodes}, wires::{Wire, WireKey, Wires}};
 
 mod component;
 mod wires;
@@ -19,7 +20,7 @@ pub type CompStorage = typed_generational_arena::StandardArena<Component>;
 pub type CompKey = typed_generational_arena::StandardIndex<Component>;
 
 #[derive(PartialEq, Clone, Copy, Debug, Serialize, Deserialize)]
-pub enum NodeOwner {
+pub enum ElemIndex {
 	Wire(WireKey),
 	Comp(CompKey),
 }
@@ -48,6 +49,10 @@ pub struct Canvas {
 	dialog_thread: Option<JoinHandle<String>>,
 	#[serde(skip)]
 	action: FileAction,
+	#[serde(skip)]
+	selection: Vec<ElemIndex>,
+	#[serde(skip)]
+	selection_start: Option<Vec2>,
 }
 
 #[repr(C)]
@@ -75,19 +80,21 @@ impl Canvas {
 			update_generation: 0,
 			dialog_thread: None,
 			action: FileAction::None,
+			selection: Vec::new(),
+			selection_start: None,
 		};
 		
 		s.add_comp(CompKind::OrGate, Vec2::new(0.0, -5.0));
 		
 		s.add_comp(CompKind::AndGate, Vec2::new(0.0, 0.0));
 
-		s.wires.try_add(Wire { start: Vec2::new(0.0, 1.0), end: Vec2::new(-5.0, 1.0), startnode: None, endnode: None }, &mut s.nodes);
+		s.wires.try_add(Wire { start: Vec2::new(0.0, 1.0), end: Vec2::new(-5.0, 1.0), startnode: None, endnode: None, selected: false }, &mut s.nodes);
 		s.add_comp(CompKind::Input { state: false }, Vec2::new(-7.0, 0.0));
 
-		s.wires.try_add(Wire { start: Vec2::new(0.0, 3.0), end: Vec2::new(-5.0, 3.0), startnode: None, endnode: None }, &mut s.nodes);
+		s.wires.try_add(Wire { start: Vec2::new(0.0, 3.0), end: Vec2::new(-5.0, 3.0), startnode: None, endnode: None, selected: false }, &mut s.nodes);
 		s.add_comp(CompKind::Input { state: false }, Vec2::new(-7.0, 2.0));
 
-		s.wires.try_add(Wire { start: Vec2::new(4.0, 2.0), end: Vec2::new(8.0, 2.0), startnode: None, endnode: None }, &mut s.nodes);
+		s.wires.try_add(Wire { start: Vec2::new(4.0, 2.0), end: Vec2::new(8.0, 2.0), startnode: None, endnode: None, selected: false }, &mut s.nodes);
 
 		s
 	}
@@ -214,23 +221,25 @@ impl Canvas {
 		}
 		for w in newwires { self.wires.try_add(w, &mut self.nodes); }
 
-		let keys: Vec<_> = self.comps.iter().map(|kv| kv.0).collect();
-		for i in keys {
-			if self.comps.get_mut(i).unwrap().draw(&mut self.inner, ui) {
-				self.comps.get_mut(i).unwrap().on_click();
-				self.comps[i].update(&mut self.update_generation, &self.nodes.node_lookup, &mut self.nodes.node_storage, &self.wires, &self.comps);
+		let keys: Vec<_> = self.comps.iter().map(|(idx, _)| idx).collect();
+		'turip: for k in &keys {
+			if self.comps.get_mut(*k).unwrap().draw(&mut self.inner, ui) {
+				self.comps.get_mut(*k).unwrap().on_click();
+				self.comps[*k].update(&mut self.update_generation, &self.nodes.node_lookup, &mut self.nodes.node_storage, &self.wires, &self.comps);
 				self.update_generation += 1;
 			}
-		}
 
-		self.wires.draw(&mut self.inner, ui, &self.nodes);
+			if ui.is_item_hovered() {
+				if ui.is_mouse_clicked(MouseButton::Left) {
+					// Ha a jelenleg hoverelt item is ki van már jelölve, akkor ne deszelektáljunk
+					if !self.comps[*k].selected {
+						if !ui.is_key_down(Key::LeftShift) { self.select(None); }
+						self.select(Some(ElemIndex::Comp(*k)));
+					}
+				}
+			}
 
-		let keys: Vec<_> = self.comps.iter().map(|(idx, _)| idx).collect();
-
-		'turip: for k in &keys {
-			let request = self.comps[*k].move_request.take();
-
-			if let Some(newpos) = request {
+			if let Some(newpos) = self.comps[*k].move_request.take() {
 				let a1 = newpos;
 				let a2 = a1 + self.comps[*k].kind.hitbox();
 
@@ -246,10 +255,44 @@ impl Canvas {
 					}
 				}
 
-				let mut element = self.comps[*k].clone();
-				element.move_to(newpos, &mut self.nodes, *k, &self.wires, &self.comps, &mut self.update_generation);
-				self.comps[*k] = element;
+				if newpos - self.comps[*k].pos != Vec2::new(0.0, 0.0) {
+					let move_by = newpos - self.comps[*k].pos;
+					for k in &self.selection {
+						if let ElemIndex::Comp(k) = *k {
+							let mut element = self.comps[k].clone();
+							element.move_by(move_by, &mut self.nodes, k, &self.wires, &self.comps, &mut self.update_generation);
+							self.comps[k] = element;
+						} else if let ElemIndex::Wire(k) = *k {
+							let mut element = self.wires.wires[k].clone();
+							element.move_by(move_by, k, &mut self.nodes, &self.wires, &self.comps, &mut self.update_generation);
+							self.wires.wires[k] = element;
+						}
+					}
+				}
 			}
+		}
+
+		let mut id = 0;
+		let wkeys: Vec<_> = self.wires.wires.iter().map(|(idx, _)| idx).collect();
+		for wi in &wkeys {
+			let logic_lvl = &self.nodes.node_storage[self.wires.wires[*wi].startnode.unwrap()].logic_lvl;
+			let argb = logic_lvl.to_color();
+
+			if self.wires.wires[*wi].draw(&self.inner, ui, Some(argb), Some(id)) {
+				println!("buooon clicked");
+			}
+
+			if ui.is_item_hovered() {
+				if ui.is_mouse_clicked(MouseButton::Left) {
+					// Ha a jelenleg hoverelt item is ki van már jelölve, akkor ne deszelektáljunk
+					if !self.wires.wires[*wi].selected {
+						if !ui.is_key_down(Key::LeftShift) { self.select(None); }
+						self.select(Some(ElemIndex::Wire(*wi)));
+					}
+				}
+			}
+
+			id += 1;
 		}
 
 		for (_, node) in &self.nodes.node_lookup {
@@ -258,13 +301,60 @@ impl Canvas {
 
 			node.draw(&mut self.inner, ui);
 		}
+
+		// Egyenkénti kijelölés logika
+		if ui.is_mouse_released(MouseButton::Left) {
+			if !ui.is_any_item_hovered() {
+				if !ui.is_key_down(Key::LeftShift) {
+					self.select(None);
+				}
+			}
+
+			if let Some(s1) = self.selection_start.take() {
+				for k in &keys {
+					let e1 = self.inner.window_to_canvas(ui.io().mouse_pos.into());
+					let e = Vec2::new(s1.x.max(e1.x), s1.y.max(e1.y));
+					let s = Vec2::new(s1.x.min(e1.x), s1.y.min(e1.y));
+					if (self.comps[*k].pos.x >= s.x && self.comps[*k].pos.x <= e.x) && (self.comps[*k].pos.y >= s.y && self.comps[*k].pos.y <= e.y) {
+						self.select(Some(ElemIndex::Comp(*k)));
+					}
+				}
+
+				for wi in &wkeys {
+					let e1 = self.inner.window_to_canvas(ui.io().mouse_pos.into());
+					let e = Vec2::new(s1.x.max(e1.x), s1.y.max(e1.y));
+					let s = Vec2::new(s1.x.min(e1.x), s1.y.min(e1.y));
+					if (
+					self.wires.wires[*wi].start.x >= s.x && self.wires.wires[*wi].start.x <= e.x) && (self.wires.wires[*wi].start.y >= s.y && self.wires.wires[*wi].start.y <= e.y &&
+					self.wires.wires[*wi].end.x >= s.x && self.wires.wires[*wi].end.x <= e.x) && (self.wires.wires[*wi].end.y >= s.y && self.wires.wires[*wi].end.y <= e.y
+					) {
+						self.select(Some(ElemIndex::Wire(*wi)));
+					}
+				}
+			}
+		}
+
+		// Jelölő téglalap logika
+		{
+			if !ui.is_any_item_hovered() {
+				if ui.is_mouse_clicked(MouseButton::Left) {
+					self.selection_start.replace(self.inner.window_to_canvas(ui.io().mouse_pos.into()));
+				}
+			}
+
+			if let Some(start) = self.selection_start {
+				ui.get_window_draw_list().add_rect(self.inner.canvas_to_window(start), ui.io().mouse_pos, 0x06ffffff)
+					.filled(true)
+					.build();
+			}
+		}
 	}
 
 	fn add_comp(&mut self, asd: CompKind, at: Vec2) {
 		let c = Component::new(asd, at, self.inner.compid, &mut self.nodes);
 		let idx = self.comps.insert(c);
 		for n in &self.comps[idx].nodes {
-			self.nodes.node_storage[*n].owner.replace(NodeOwner::Comp(idx));
+			self.nodes.node_storage[*n].owner = Some(ElemIndex::Comp(idx));
 
 			let ll = self.nodes.node_storage[*n].logic_lvl;
 			let npos = self.nodes.node_storage[*n].pos;
@@ -287,6 +377,20 @@ impl Canvas {
 		let mut almost = Self::deserialize(&mut deser).expect("Failed to deserialize save file!");
 		almost.inner.create_pipeline(device, surface_desc);
 		almost
+	}
+
+	fn select(&mut self, idx: Option<ElemIndex>) {
+		if let Some(idx) = idx {
+			self.selection.push(idx);
+			match idx {
+				ElemIndex::Wire(i) => self.wires.wires[i].selected = true,
+				ElemIndex::Comp(i) => self.comps[i].selected = true,
+			}
+		} else {
+			for (_, c) in &mut self.comps { c.selected = false; }
+			for (_, w) in &mut self.wires.wires { w.selected = false; }
+			self.selection.clear();
+		}
 	}
 }
 

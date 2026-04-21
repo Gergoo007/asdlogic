@@ -1,17 +1,17 @@
-use imgui::Ui;
 use serde::{Deserialize, Serialize};
 
-use crate::{canvas::{CanvasInner, NodeHandler, NodeOwner, Vec2, nodes::{Node, NodeKey}}, config};
+use crate::{canvas::{CanvasInner, CompStorage, ElemIndex, NodeHandler, Vec2, nodes::{Node, NodeKey}}, config};
 
 pub type WireStorage = typed_generational_arena::StandardArena<Wire>;
 pub type WireKey = typed_generational_arena::StandardIndex<Wire>;
 
-#[derive(Debug, Deserialize, Serialize)]
+#[derive(Debug, Clone, Deserialize, Serialize)]
 pub struct Wire {
 	pub start: Vec2,
 	pub end: Vec2,
 	pub startnode: Option<NodeKey>,
 	pub endnode: Option<NodeKey>,
+	pub selected: bool,
 }
 
 impl Wire {
@@ -21,24 +21,54 @@ impl Wire {
 			end,
 			startnode: None,
 			endnode: None,
+			selected: false,
 		}
 	}
 
 	pub fn overwrite(&mut self, start: Vec2, end: Vec2, nodes: &mut NodeHandler, oldidx: WireKey) {
-		let node1 = nodes.remove_node(self.start, NodeOwner::Wire(oldidx));
-		let node2 = nodes.remove_node(self.end, NodeOwner::Wire(oldidx));
+		let node1 = nodes.remove_node(self.start, ElemIndex::Wire(oldidx));
+		let node2 = nodes.remove_node(self.end, ElemIndex::Wire(oldidx));
 
 		self.start = start;
 		self.end = end;
 
-		nodes.add_node(Node { pos: self.start, owner: Some(NodeOwner::Wire(oldidx)), ..node1 });
-		nodes.add_node(Node { pos: self.end, owner: Some(NodeOwner::Wire(oldidx)), ..node2 });
+		nodes.add_node(Node { pos: self.start, owner: Some(ElemIndex::Wire(oldidx)), ..node1 });
+		nodes.add_node(Node { pos: self.end, owner: Some(ElemIndex::Wire(oldidx)), ..node2 });
 	}
 
-	pub fn draw(&self, canvas: &CanvasInner, draw_list: &imgui::DrawListMut, color: Option<u32>) {
-		draw_list.add_line(canvas.canvas_to_window(self.start), canvas.canvas_to_window(self.end), if let Some(c) = color { c } else { 0xffffffff })
+	pub fn draw(&self, canvas: &CanvasInner, ui: &imgui::Ui, color: Option<u32>, id: Option<u32>) -> bool {
+		if self.selected {
+			ui.get_window_draw_list().add_line(canvas.canvas_to_window(self.start), canvas.canvas_to_window(self.end), 0xffffffff)
+				.thickness((config::WIRE_THICKNESS + 3.0) * canvas.zoom)
+				.build();
+		}
+		ui.get_window_draw_list().add_line(canvas.canvas_to_window(self.start), canvas.canvas_to_window(self.end), if let Some(c) = color { c } else { 0xffffffff })
 			.thickness(config::WIRE_THICKNESS * canvas.zoom)
 			.build();
+
+		let mut clicked = false;
+		if let Some(id) = id {
+			let s = Vec2::new(self.start.x.min(self.end.x), self.start.y.min(self.end.y));
+			let e = Vec2::new(self.start.x.max(self.end.x), self.start.y.max(self.end.y));
+
+			let mut size = canvas.canvas_to_window_size(s, e - s);
+			let mut pos = canvas.canvas_to_window(s);
+			let btnsize = config::WIRE_HITBOX_WIDTH * canvas.zoom;
+			if size.x == 0.0 {
+				size.x = btnsize;
+				pos.x -= btnsize / 2.0;
+			} else if size.y == 0.0 {
+				size.y = btnsize;
+				pos.y -= btnsize / 2.0;
+			} else {
+				unreachable!("Diagonal wires not supported yet!");
+			}
+
+			ui.set_cursor_pos(pos);
+			clicked = ui.invisible_button(format!("wire{}", id), size);
+		}
+
+		clicked
 	}
 
 	pub fn touches(&self, p: Vec2) -> bool {
@@ -75,8 +105,19 @@ impl Wire {
 			start: at,
 			end: oldend,
 			startnode: None,
-			endnode: None
+			endnode: None,
+			selected: false,
 		}
+	}
+
+	pub fn move_by(&mut self, by: Vec2, widx: WireKey, nodes: &mut NodeHandler, wires: &Wires, comps: &CompStorage, generation: &mut u32) {
+		self.start += by;
+		self.end += by;
+
+		nodes.move_node(self.startnode.unwrap(), by, ElemIndex::Wire(widx), wires, comps, generation);
+		*generation += 1;
+		nodes.move_node(self.endnode.unwrap(), by, ElemIndex::Wire(widx), wires, comps, generation);
+		*generation += 1;
 	}
 }
 
@@ -101,32 +142,10 @@ impl Wires {
 
 		}
 
-		self.wires[wire].startnode.replace(nodes.add_node(Node { pos: start, owner: Some(NodeOwner::Wire(wire)), logic_lvl: ll1, generation: 0, output: false, }));
-		self.wires[wire].endnode.replace(nodes.add_node(Node { pos: end, owner: Some(NodeOwner::Wire(wire)), logic_lvl: ll1, generation: 0, output: false, }));
+		self.wires[wire].startnode.replace(nodes.add_node(Node { pos: start, owner: Some(ElemIndex::Wire(wire)), logic_lvl: ll1, generation: 0, output: false, }));
+		self.wires[wire].endnode.replace(nodes.add_node(Node { pos: end, owner: Some(ElemIndex::Wire(wire)), logic_lvl: ll1, generation: 0, output: false, }));
 
 		wire
-	}
-
-	pub fn draw(&mut self, canvas: &mut CanvasInner, ui: &Ui, nodes: &NodeHandler) {
-		let draw_list = ui.get_window_draw_list();
-		for (_, w) in &self.wires {
-			// let hsl: palette::Hsla = palette::Hsla::new(widx.into_raw_parts().0 as f32 / self.wires.len() as f32 * 360.0, 0.8, 0.5, 1.0);
-			// let rgb: palette::Srgb<f32> = palette::Srgb::from_color(hsl);
-
-			// let r = (rgb.red	* 255.0) as u32;
-			// let g = (rgb.green	* 255.0) as u32;
-			// let b = (rgb.blue	* 255.0) as u32;
-			// let a = (hsl.alpha	* 255.0) as u32;
-
-			// let argb: u32 = (a << 24) | (r << 16) | (g << 8) | b;
-
-			// debug_assert_eq!(nodes.node_storage[w.startnode.unwrap()].logic_lvl, nodes.node_storage[w.endnode.unwrap()].logic_lvl);
-
-			let logic_lvl = &nodes.node_storage[w.startnode.unwrap()].logic_lvl;
-			let argb = logic_lvl.to_color();
-
-			w.draw(canvas, &draw_list, Some(argb));
-		}
 	}
 
 	pub fn try_add(&mut self, new: Wire, nodes: &mut NodeHandler) {
