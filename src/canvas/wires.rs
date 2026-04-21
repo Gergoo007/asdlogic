@@ -112,10 +112,10 @@ impl Wire {
 
 	pub fn move_by(&mut self, by: Vec2, widx: WireKey, nodes: &mut NodeHandler, wires: &Wires, comps: &CompStorage, generation: &mut u32) {
 		self.start += by;
-		self.end += by;
-
 		nodes.move_node(self.startnode.unwrap(), by, ElemIndex::Wire(widx), wires, comps, generation);
 		*generation += 1;
+
+		self.end += by;
 		nodes.move_node(self.endnode.unwrap(), by, ElemIndex::Wire(widx), wires, comps, generation);
 		*generation += 1;
 	}

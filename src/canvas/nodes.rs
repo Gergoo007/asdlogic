@@ -102,7 +102,7 @@ pub fn check_driven(node_lookup: &NodeLookup, node_storage: &mut NodeStorage, wi
 		*generation += 1;
 	}
 
-	if !node_lookup.contains_key(&vec2int(at)) { return false; }
+	// if !node_lookup.contains_key(&vec2int(at)) { return false; }
 
 	for node in &node_lookup[&vec2int(at)] {
 		let k = *node;
@@ -124,11 +124,11 @@ pub fn check_driven(node_lookup: &NodeLookup, node_storage: &mut NodeStorage, wi
 		if let Some(ElemIndex::Wire(w)) = node.owner {
 			// Ha vezeték, akkor a másik node-ot is be kell állítani
 			if k == wires.wires[w].startnode.unwrap() {
-				if check_driven(node_lookup, node_storage, wires, comps, wires.wires[w].end, generation, false) {
+				if check_driven(node_lookup, node_storage, wires, comps, node_storage[wires.wires[w].endnode.unwrap()].pos, generation, false) {
 					return true;
 				}
 			} else if k == wires.wires[w].endnode.unwrap() {
-				if check_driven(node_lookup, node_storage, wires, comps, wires.wires[w].start, generation, false) {
+				if check_driven(node_lookup, node_storage, wires, comps, node_storage[wires.wires[w].startnode.unwrap()].pos, generation, false) {
 					return true;
 				}
 			} else {
@@ -154,7 +154,7 @@ pub fn set_nodes(node_lookup: &NodeLookup, node_storage: &mut NodeStorage, wires
 		*generation += 1;
 	}
 
-	if !node_lookup.contains_key(&vec2int(at)) { return; }
+	// if !node_lookup.contains_key(&vec2int(at)) { return; }
 
 	for node in &node_lookup[&vec2int(at)] {
 		let k = *node;
@@ -173,9 +173,9 @@ pub fn set_nodes(node_lookup: &NodeLookup, node_storage: &mut NodeStorage, wires
 		if let Some(ElemIndex::Wire(w)) = node.owner {
 			// Ha vezeték, akkor a másik node-ot is be kell állítani
 			if k == wires.wires[w].startnode.unwrap() {
-				set_nodes(node_lookup, node_storage, wires, comps, wires.wires[w].end, generation, ll, false);
+				set_nodes(node_lookup, node_storage, wires, comps, node_storage[wires.wires[w].endnode.unwrap()].pos, generation, ll, false);
 			} else if k == wires.wires[w].endnode.unwrap() {
-				set_nodes(node_lookup, node_storage, wires, comps, wires.wires[w].start, generation, ll, false);
+				set_nodes(node_lookup, node_storage, wires, comps, node_storage[wires.wires[w].startnode.unwrap()].pos, generation, ll, false);
 			} else {
 				unreachable!("he????");
 			}
