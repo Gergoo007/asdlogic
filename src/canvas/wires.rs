@@ -25,9 +25,9 @@ impl Wire {
 		}
 	}
 
-	pub fn overwrite(&mut self, start: Vec2, end: Vec2, nodes: &mut NodeHandler, oldidx: WireKey) {
-		let node1 = nodes.remove_node(self.start, ElemIndex::Wire(oldidx));
-		let node2 = nodes.remove_node(self.end, ElemIndex::Wire(oldidx));
+	pub fn overwrite(&mut self, start: Vec2, end: Vec2, nodes: &mut NodeHandler, oldidx: WireKey, wires: &Wires, comps: &CompStorage, generation: &mut u32) {
+		let node1 = nodes.remove_node(self.start, ElemIndex::Wire(oldidx), wires, comps, generation);
+		let node2 = nodes.remove_node(self.end, ElemIndex::Wire(oldidx), wires, comps, generation);
 
 		self.start = start;
 		self.end = end;
@@ -119,6 +119,11 @@ impl Wire {
 		nodes.move_node(self.endnode.unwrap(), by, ElemIndex::Wire(widx), wires, comps, generation);
 		*generation += 1;
 	}
+
+	pub fn remove_nodes(&self, nodes: &mut NodeHandler, widx: WireKey, wires: &Wires, comps: &CompStorage, generation: &mut u32) {
+		nodes.remove_node(nodes.node_storage[self.startnode.unwrap()].pos, ElemIndex::Wire(widx), wires, comps, generation);
+		nodes.remove_node(nodes.node_storage[self.endnode.unwrap()].pos, ElemIndex::Wire(widx), wires, comps, generation);
+	}
 }
 
 #[derive(Serialize, Deserialize)]
@@ -148,7 +153,13 @@ impl Wires {
 		wire
 	}
 
-	pub fn try_add(&mut self, new: Wire, nodes: &mut NodeHandler) {
+	fn overwrite(&mut self, start: Vec2, end: Vec2, nodes: &mut NodeHandler, oldidx: WireKey, comps: &CompStorage, generation: &mut u32) {
+		let mut w = self.wires[oldidx].clone();
+		w.overwrite(start, end, nodes, oldidx, self, comps, generation);
+		self.wires[oldidx] = w;
+	}
+
+	pub fn try_add(&mut self, new: Wire, nodes: &mut NodeHandler, comps: &CompStorage, generation: &mut u32) {
 		let mut runanother = true;
 		let mut insert = true;
 
@@ -159,7 +170,10 @@ impl Wires {
 		'check: while runanother {
 			runanother = false;
 
-			for (oldidx, old) in self.wires.iter_mut() {
+			let keys: Vec<_> = self.wires.iter().map(|(e, _)| e).collect();
+			// for (oldidx, old) in &mut self.wires {
+			for oldidx in keys {
+				let old = &self.wires[oldidx];
 				let v1 = old.start - old.end;
 				let v2 = new.start - new.end;
 				let parallel = v1.perp_dot(v2).abs() < 1e-6;
@@ -178,7 +192,7 @@ impl Wires {
 						return;
 					}
 
-					old.overwrite(new.start, new.end, nodes, oldidx);
+					self.overwrite(new.start, new.end, nodes, oldidx, comps, generation);
 					runanother = true; continue 'check;
 				}
 
@@ -186,16 +200,16 @@ impl Wires {
 				if parallel {
 					if nodes.count_nodes(old.start) == 1 {
 						if old.start == new.start {
-							old.overwrite(new.end, old.end, nodes, oldidx);
+							self.overwrite(new.end, old.end, nodes, oldidx, comps, generation);
 							runanother = true; continue 'check;
 						} else if old.start == new.end {
-							old.overwrite(old.end, new.start, nodes, oldidx);
+							self.overwrite(old.end, new.start, nodes, oldidx, comps, generation);
 							runanother = true; continue 'check;
 						} else if old.end == new.start {
-							old.overwrite(old.start, new.end, nodes, oldidx);
+							self.overwrite(old.start, new.end, nodes, oldidx, comps, generation);
 							runanother = true; continue 'check;
 						} else if old.end == new.end {
-							old.overwrite(old.start, new.start, nodes, oldidx);
+							self.overwrite(old.start, new.start, nodes, oldidx, comps, generation);
 							runanother = true; continue 'check;
 						}
 					}
@@ -203,28 +217,28 @@ impl Wires {
 					// Az új vezetéket össze lehet vonni egy meglévővel (az egyik a másikból indul ki + párhuzamosak)
 					if old.touches(new.start) {
 						if new.touches(old.start) {
-							old.overwrite(old.end, new.end, nodes, oldidx);
+							self.overwrite(old.end, new.end, nodes, oldidx, comps, generation);
 							runanother = true; continue 'check;
 						} else if new.touches(old.end) {
-							old.overwrite(old.start,new.end, nodes, oldidx);
+							self.overwrite(old.start,new.end, nodes, oldidx, comps, generation);
 							runanother = true; continue 'check;
 						}
 					} else if old.touches(new.end) {
 						if new.touches(old.start) {
-							old.overwrite(old.end, new.start, nodes, oldidx);
+							self.overwrite(old.end, new.start, nodes, oldidx, comps, generation);
 							runanother = true; continue 'check;
 						} else if new.touches(old.end) {
-							old.overwrite(old.start, new.start, nodes, oldidx);
+							self.overwrite(old.start, new.start, nodes, oldidx, comps, generation);
 							runanother = true; continue 'check;
 						}
 					}
 				} else {
 					if old.touches(new.start) && old.start != new.start && old.end != new.start {
 						assert!(secondwire.is_none());
-						secondwire.replace(old.split(new.start));
+						secondwire.replace(self.wires[oldidx].split(new.start));
 					} else if old.touches(new.end) && old.start != new.end && old.end != new.end {
 						assert!(thirdwire.is_none());
-						thirdwire.replace(old.split(new.end));
+						thirdwire.replace(self.wires[oldidx].split(new.end));
 					}
 				}
 			}

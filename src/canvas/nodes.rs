@@ -221,7 +221,7 @@ impl NodeHandler {
 		}
 	}
 
-	pub fn remove_node(&mut self, at: Vec2, owner: ElemIndex) -> Node {
+	pub fn remove_node(&mut self, at: Vec2, owner: ElemIndex, wires: &Wires, comps: &CompStorage, generation: &mut u32) -> Node {
 		let vals = self.node_lookup.get_mut(&vec2int(at)).unwrap();
 		let mut node = None;
 
@@ -240,7 +240,11 @@ impl NodeHandler {
 		// fel is szabadítom ezt a bejegyzést a HashMap-ből
 		if vals.len() == 0 {
 			self.node_lookup.remove(&vec2int(at));
+		} else {
+			// Ha nem akkor lehet undefined-ra kell állítani a jeleket
+			set_nodes(&self.node_lookup, &mut self.node_storage, wires, comps, at, generation, LL::U, true);
 		}
+		
 
 		node.unwrap()
 	}

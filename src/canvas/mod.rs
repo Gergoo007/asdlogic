@@ -88,13 +88,13 @@ impl Canvas {
 		
 		s.add_comp(CompKind::AndGate, Vec2::new(0.0, 0.0));
 
-		s.wires.try_add(Wire { start: Vec2::new(0.0, 1.0), end: Vec2::new(-5.0, 1.0), startnode: None, endnode: None, selected: false }, &mut s.nodes);
+		s.wires.try_add(Wire { start: Vec2::new(0.0, 1.0), end: Vec2::new(-5.0, 1.0), startnode: None, endnode: None, selected: false }, &mut s.nodes, &s.comps, &mut s.update_generation);
 		s.add_comp(CompKind::Input { state: false }, Vec2::new(-7.0, 0.0));
 
-		s.wires.try_add(Wire { start: Vec2::new(0.0, 3.0), end: Vec2::new(-5.0, 3.0), startnode: None, endnode: None, selected: false }, &mut s.nodes);
+		s.wires.try_add(Wire { start: Vec2::new(0.0, 3.0), end: Vec2::new(-5.0, 3.0), startnode: None, endnode: None, selected: false }, &mut s.nodes, &s.comps, &mut s.update_generation);
 		s.add_comp(CompKind::Input { state: false }, Vec2::new(-7.0, 2.0));
 
-		s.wires.try_add(Wire { start: Vec2::new(4.0, 2.0), end: Vec2::new(8.0, 2.0), startnode: None, endnode: None, selected: false }, &mut s.nodes);
+		s.wires.try_add(Wire { start: Vec2::new(4.0, 2.0), end: Vec2::new(8.0, 2.0), startnode: None, endnode: None, selected: false }, &mut s.nodes, &s.comps, &mut s.update_generation);
 
 		s
 	}
@@ -219,7 +219,7 @@ impl Canvas {
 			if let Some(w) = tobeadded.0 { newwires.push(w); }
 			if let Some(w) = tobeadded.1 { newwires.push(w); }
 		}
-		for w in newwires { self.wires.try_add(w, &mut self.nodes); }
+		for w in newwires { self.wires.try_add(w, &mut self.nodes, &self.comps, &mut self.update_generation); }
 
 		let keys: Vec<_> = self.comps.iter().map(|(idx, _)| idx).collect();
 		'turip: for k in &keys {
@@ -347,6 +347,20 @@ impl Canvas {
 					.filled(true)
 					.build();
 			}
+		}
+
+		// Törlés logika
+		if ui.is_key_down(Key::Delete) {
+			for e in &self.selection {
+				if let ElemIndex::Comp(c) = e {
+					self.comps[*c].remove_nodes(&mut self.nodes, *c, &self.wires, &self.comps, &mut self.update_generation);
+					self.comps.remove(*c);
+				} else if let ElemIndex::Wire(w) = e {
+					self.wires.wires[*w].remove_nodes(&mut self.nodes, *w, &self.wires, &self.comps, &mut self.update_generation);
+					self.wires.wires.remove(*w);
+				}
+			}
+			self.selection.clear();
 		}
 	}
 

@@ -1,6 +1,6 @@
 use serde::{Deserialize, Serialize};
 
-use crate::{canvas::{CanvasInner, CompKey, CompStorage, NodeHandler, ElemIndex, Vec2, logic::LL, nodes::{Node, NodeKey, NodeLookup, NodeStorage}, set_nodes, wires::Wires}, config::{self, GRID_SPACING}};
+use crate::{canvas::{CanvasInner, CompKey, CompStorage, ElemIndex, NodeHandler, Vec2, logic::LL, nodes::{Node, NodeKey, NodeLookup, NodeStorage}, set_nodes, wires::Wires}, config::{self, GRID_SPACING}};
 
 #[allow(unused)]
 #[derive(strum::EnumIter, strum::EnumMessage, Debug, PartialEq, Clone, Serialize, Deserialize)]
@@ -452,6 +452,12 @@ impl Component {
 			CompKind::Input { state } => {
 				set_nodes(node_lookup, node_storage, wires, comps, node_storage[self.nodes[0]].pos, generation, state.into(), false);
 			},
+		}
+	}
+
+	pub fn remove_nodes(&self, nodes: &mut NodeHandler, cidx: CompKey, wires: &Wires, comps: &CompStorage, generation: &mut u32) {
+		for n in &self.nodes {
+			nodes.remove_node(nodes.node_storage[*n].pos, ElemIndex::Comp(cidx), wires, comps, generation);
 		}
 	}
 }
