@@ -1,3 +1,4 @@
+use imgui::DrawListMut;
 use serde::{Deserialize, Serialize};
 
 use crate::{canvas::{CanvasInner, CompKey, CompStorage, ElemIndex, NodeHandler, Vec2, logic::LL, nodes::{Node, NodeKey, NodeLookup, NodeStorage}, set_nodes, wires::Wires}, config::{self, GRID_SPACING}};
@@ -67,6 +68,253 @@ impl CompKind {
 			),
 		}
 	}
+
+	pub fn draw(&self, pos: Vec2, color: u32, canvas: &CanvasInner, draw_list: &DrawListMut) {
+		// A görbe valamiért lejjebb van mint kéne, ez szemre belövi
+		let curve_y_offset: f32 = -0.03 / canvas.zoom;
+
+		let th = config::COMPONENT_THICKNESS * canvas.zoom;
+
+		match *self {
+			CompKind::AndGate => {
+				draw_list.add_bezier_curve(
+					canvas.canvas_to_window(pos + Vec2::new(2.00, 4.0 - curve_y_offset)),
+					canvas.canvas_to_window(pos + Vec2::new(4.67, 4.0 - curve_y_offset)),
+					canvas.canvas_to_window(pos + Vec2::new(4.67, 0.0 - curve_y_offset)),
+					canvas.canvas_to_window(pos + Vec2::new(2.00, 0.0 - curve_y_offset)),
+					color
+				)
+					.thickness(th)
+					.build();
+
+				draw_list.add_line(
+					canvas.canvas_to_window(pos + Vec2::new(0.0, 4.0)),
+					canvas.canvas_to_window(pos + Vec2::new(2.0, 4.0)),
+					color
+				)
+					.thickness(th)
+					.build();
+
+				draw_list.add_line(
+					canvas.canvas_to_window(pos + Vec2::new(0.0, 0.0)),
+					canvas.canvas_to_window(pos + Vec2::new(2.0, 0.0)),
+					color
+				)
+					.thickness(th)
+					.build();
+
+				draw_list.add_line(
+					canvas.canvas_to_window(pos + Vec2::new(0.0, 4.0)),
+					canvas.canvas_to_window(pos + Vec2::new(0.0, 0.0)),
+					color
+				)
+					.thickness(th)
+					.build();
+			},
+			CompKind::OrGate => {
+				// Hogy a Node-ok rácsra illeszkedjenek
+				const OFFSET: Vec2 = Vec2::new(0.231, 0.0);
+
+				// Elülső görbe
+				{
+					draw_list.add_bezier_curve(
+						canvas.canvas_to_window(pos + Vec2::new(2.00, 4.0 - curve_y_offset)),
+						canvas.canvas_to_window(pos + Vec2::new(4.50, 4.0 - curve_y_offset)),
+						canvas.canvas_to_window(pos + Vec2::new(5.00, 2.0 - curve_y_offset)),
+						canvas.canvas_to_window(pos + Vec2::new(5.00, 2.0 - curve_y_offset)),
+						color
+					)
+						.thickness(th)
+						.build();
+
+					draw_list.add_bezier_curve(
+						canvas.canvas_to_window(pos + Vec2::new(2.00, 0.0 - curve_y_offset)),
+						canvas.canvas_to_window(pos + Vec2::new(4.50, 0.0 - curve_y_offset)),
+						canvas.canvas_to_window(pos + Vec2::new(5.00, 2.0 - curve_y_offset)),
+						canvas.canvas_to_window(pos + Vec2::new(5.00, 2.0 - curve_y_offset)),
+						color
+					)
+						.thickness(th)
+						.build();
+				}
+
+				// Hátsó görbe
+				{
+					draw_list.add_bezier_curve(
+						canvas.canvas_to_window(pos + OFFSET + Vec2::new(0.00, 0.0 - curve_y_offset)),
+						canvas.canvas_to_window(pos + OFFSET + Vec2::new(1.30, 1.0 - curve_y_offset)),
+						canvas.canvas_to_window(pos + OFFSET + Vec2::new(1.30, 3.0 - curve_y_offset)),
+						canvas.canvas_to_window(pos + OFFSET + Vec2::new(0.00, 4.0 - curve_y_offset)),
+						color
+					)
+						.thickness(th)
+						.build();
+				}
+
+				draw_list.add_line(
+					canvas.canvas_to_window(pos + OFFSET + Vec2::new(0.0, 4.0)),
+					canvas.canvas_to_window(pos + Vec2::new(2.0, 4.0)),
+					color
+				)
+					.thickness(th)
+					.build();
+
+				draw_list.add_line(
+					canvas.canvas_to_window(pos + OFFSET + Vec2::new(0.0, 0.0)),
+					canvas.canvas_to_window(pos + Vec2::new(2.0, 0.0)),
+					color
+				)
+					.thickness(th)
+					.build();
+			},
+			CompKind::NandGate => {
+				draw_list.add_bezier_curve(
+					canvas.canvas_to_window(pos + Vec2::new(2.00, 4.0 - curve_y_offset)),
+					canvas.canvas_to_window(pos + Vec2::new(4.67, 4.0 - curve_y_offset)),
+					canvas.canvas_to_window(pos + Vec2::new(4.67, 0.0 - curve_y_offset)),
+					canvas.canvas_to_window(pos + Vec2::new(2.00, 0.0 - curve_y_offset)),
+					color
+				)
+					.thickness(th)
+					.build();
+
+				draw_list.add_line(
+					canvas.canvas_to_window(pos + Vec2::new(0.0, 4.0)),
+					canvas.canvas_to_window(pos + Vec2::new(2.0, 4.0)),
+					color
+				)
+					.thickness(th)
+					.build();
+
+				draw_list.add_line(
+					canvas.canvas_to_window(pos + Vec2::new(0.0, 0.0)),
+					canvas.canvas_to_window(pos + Vec2::new(2.0, 0.0)),
+					color
+				)
+					.thickness(th)
+					.build();
+
+				draw_list.add_line(
+					canvas.canvas_to_window(pos + Vec2::new(0.0, 4.0)),
+					canvas.canvas_to_window(pos + Vec2::new(0.0, 0.0)),
+					color
+				)
+					.thickness(th)
+					.build();
+
+				draw_list.add_circle(
+					canvas.canvas_to_window(pos + Vec2::new(4.5, 2.0)),
+					canvas.zoom * (GRID_SPACING / 2.0),
+					color
+				)
+					.thickness(th)
+					.build();
+			},
+			CompKind::XorGate => {
+				// Hogy a Node-ok rácsra illeszkedjenek
+				const OFFSET: Vec2 = Vec2::new(0.231, 0.0);
+
+				// Elülső görbe
+				{
+					draw_list.add_bezier_curve(
+						canvas.canvas_to_window(pos + Vec2::new(2.00, 4.0 - curve_y_offset)),
+						canvas.canvas_to_window(pos + Vec2::new(4.50, 4.0 - curve_y_offset)),
+						canvas.canvas_to_window(pos + Vec2::new(5.00, 2.0 - curve_y_offset)),
+						canvas.canvas_to_window(pos + Vec2::new(5.00, 2.0 - curve_y_offset)),
+						color
+					)
+						.thickness(th)
+						.build();
+
+					draw_list.add_bezier_curve(
+						canvas.canvas_to_window(pos + Vec2::new(2.00, 0.0 - curve_y_offset)),
+						canvas.canvas_to_window(pos + Vec2::new(4.50, 0.0 - curve_y_offset)),
+						canvas.canvas_to_window(pos + Vec2::new(5.00, 2.0 - curve_y_offset)),
+						canvas.canvas_to_window(pos + Vec2::new(5.00, 2.0 - curve_y_offset)),
+						color
+					)
+						.thickness(th)
+						.build();
+				}
+
+				// Hátsó görbe #1
+				let so = Vec2::new(0.7, 0.0);
+				{
+					draw_list.add_bezier_curve(
+						canvas.canvas_to_window(pos + so + OFFSET + Vec2::new(0.00, 0.0 - curve_y_offset)),
+						canvas.canvas_to_window(pos + so + OFFSET + Vec2::new(1.30, 1.0 - curve_y_offset)),
+						canvas.canvas_to_window(pos + so + OFFSET + Vec2::new(1.30, 3.0 - curve_y_offset)),
+						canvas.canvas_to_window(pos + so + OFFSET + Vec2::new(0.00, 4.0 - curve_y_offset)),
+						color
+					)
+						.thickness(th)
+						.build();
+				}
+
+				// Hátsó görbe #2
+				{
+					draw_list.add_bezier_curve(
+						canvas.canvas_to_window(pos + OFFSET + Vec2::new(0.00, 0.0 - curve_y_offset)),
+						canvas.canvas_to_window(pos + OFFSET + Vec2::new(1.30, 1.0 - curve_y_offset)),
+						canvas.canvas_to_window(pos + OFFSET + Vec2::new(1.30, 3.0 - curve_y_offset)),
+						canvas.canvas_to_window(pos + OFFSET + Vec2::new(0.00, 4.0 - curve_y_offset)),
+						color
+					)
+						.thickness(th)
+						.build();
+				}
+
+				draw_list.add_line(
+					canvas.canvas_to_window(pos + so + OFFSET + Vec2::new(0.0, 4.0)),
+					canvas.canvas_to_window(pos + Vec2::new(2.0, 4.0)),
+					color
+				)
+					.thickness(th)
+					.build();
+
+				draw_list.add_line(
+					canvas.canvas_to_window(pos + so + OFFSET + Vec2::new(0.0, 0.0)),
+					canvas.canvas_to_window(pos + Vec2::new(2.0, 0.0)),
+					color
+				)
+					.thickness(th)
+					.build();
+			},
+			CompKind::Input { state: _ } => {
+				draw_list.add_line(
+					canvas.canvas_to_window(pos + Vec2::new(0.0, 0.0)),
+					canvas.canvas_to_window(pos + Vec2::new(2.0, 0.0)),
+					color
+				)
+					.thickness(th)
+					.build();
+
+				draw_list.add_line(
+					canvas.canvas_to_window(pos + Vec2::new(2.0, 0.0)),
+					canvas.canvas_to_window(pos + Vec2::new(2.0, 2.0)),
+					color
+				)
+					.thickness(th)
+					.build();
+
+				draw_list.add_line(
+					canvas.canvas_to_window(pos + Vec2::new(2.0, 2.0)),
+					canvas.canvas_to_window(pos + Vec2::new(0.0, 2.0)),
+					color
+				)
+					.thickness(th)
+					.build();
+
+				draw_list.add_line(
+					canvas.canvas_to_window(pos + Vec2::new(0.0, 2.0)),
+					canvas.canvas_to_window(pos + Vec2::new(0.0, 0.0)),
+					color
+				)
+					.thickness(th)
+					.build();
+			}
+		}
+	}
 }
 
 #[derive(PartialEq, Clone, Serialize, Deserialize)]
@@ -96,9 +344,6 @@ impl Component {
 
 	pub fn draw(&mut self, canvas: &mut CanvasInner, ui: &imgui::Ui) -> bool {
 		let draw_list = ui.get_window_draw_list();
-
-		// A görbe valamiért lejjebb van mint kéne, ez szemre belövi
-		let curve_y_offset: f32 = -0.03 / canvas.zoom;
 
 		let mut clicked = false;
 
@@ -137,245 +382,7 @@ impl Component {
 			).thickness(th).build();
 		}
 
-		match self.kind {
-			CompKind::AndGate => {
-				draw_list.add_bezier_curve(
-					canvas.canvas_to_window(self.pos + Vec2::new(2.00, 4.0 - curve_y_offset)),
-					canvas.canvas_to_window(self.pos + Vec2::new(4.67, 4.0 - curve_y_offset)),
-					canvas.canvas_to_window(self.pos + Vec2::new(4.67, 0.0 - curve_y_offset)),
-					canvas.canvas_to_window(self.pos + Vec2::new(2.00, 0.0 - curve_y_offset)),
-					color
-				)
-					.thickness(th)
-					.build();
-
-				draw_list.add_line(
-					canvas.canvas_to_window(self.pos + Vec2::new(0.0, 4.0)),
-					canvas.canvas_to_window(self.pos + Vec2::new(2.0, 4.0)),
-					color
-				)
-					.thickness(th)
-					.build();
-
-				draw_list.add_line(
-					canvas.canvas_to_window(self.pos + Vec2::new(0.0, 0.0)),
-					canvas.canvas_to_window(self.pos + Vec2::new(2.0, 0.0)),
-					color
-				)
-					.thickness(th)
-					.build();
-
-				draw_list.add_line(
-					canvas.canvas_to_window(self.pos + Vec2::new(0.0, 4.0)),
-					canvas.canvas_to_window(self.pos + Vec2::new(0.0, 0.0)),
-					color
-				)
-					.thickness(th)
-					.build();
-			},
-			CompKind::OrGate => {
-				// Hogy a Node-ok rácsra illeszkedjenek
-				const OFFSET: Vec2 = Vec2::new(0.231, 0.0);
-
-				// Elülső görbe
-				{
-					draw_list.add_bezier_curve(
-						canvas.canvas_to_window(self.pos + Vec2::new(2.00, 4.0 - curve_y_offset)),
-						canvas.canvas_to_window(self.pos + Vec2::new(4.50, 4.0 - curve_y_offset)),
-						canvas.canvas_to_window(self.pos + Vec2::new(5.00, 2.0 - curve_y_offset)),
-						canvas.canvas_to_window(self.pos + Vec2::new(5.00, 2.0 - curve_y_offset)),
-						color
-					)
-						.thickness(th)
-						.build();
-
-					draw_list.add_bezier_curve(
-						canvas.canvas_to_window(self.pos + Vec2::new(2.00, 0.0 - curve_y_offset)),
-						canvas.canvas_to_window(self.pos + Vec2::new(4.50, 0.0 - curve_y_offset)),
-						canvas.canvas_to_window(self.pos + Vec2::new(5.00, 2.0 - curve_y_offset)),
-						canvas.canvas_to_window(self.pos + Vec2::new(5.00, 2.0 - curve_y_offset)),
-						color
-					)
-						.thickness(th)
-						.build();
-				}
-
-				// Hátsó görbe
-				{
-					draw_list.add_bezier_curve(
-						canvas.canvas_to_window(self.pos + OFFSET + Vec2::new(0.00, 0.0 - curve_y_offset)),
-						canvas.canvas_to_window(self.pos + OFFSET + Vec2::new(1.30, 1.0 - curve_y_offset)),
-						canvas.canvas_to_window(self.pos + OFFSET + Vec2::new(1.30, 3.0 - curve_y_offset)),
-						canvas.canvas_to_window(self.pos + OFFSET + Vec2::new(0.00, 4.0 - curve_y_offset)),
-						color
-					)
-						.thickness(th)
-						.build();
-				}
-
-				draw_list.add_line(
-					canvas.canvas_to_window(self.pos + OFFSET + Vec2::new(0.0, 4.0)),
-					canvas.canvas_to_window(self.pos + Vec2::new(2.0, 4.0)),
-					color
-				)
-					.thickness(th)
-					.build();
-
-				draw_list.add_line(
-					canvas.canvas_to_window(self.pos + OFFSET + Vec2::new(0.0, 0.0)),
-					canvas.canvas_to_window(self.pos + Vec2::new(2.0, 0.0)),
-					color
-				)
-					.thickness(th)
-					.build();
-			},
-			CompKind::NandGate => {
-				draw_list.add_bezier_curve(
-					canvas.canvas_to_window(self.pos + Vec2::new(2.00, 4.0 - curve_y_offset)),
-					canvas.canvas_to_window(self.pos + Vec2::new(4.67, 4.0 - curve_y_offset)),
-					canvas.canvas_to_window(self.pos + Vec2::new(4.67, 0.0 - curve_y_offset)),
-					canvas.canvas_to_window(self.pos + Vec2::new(2.00, 0.0 - curve_y_offset)),
-					color
-				)
-					.thickness(th)
-					.build();
-
-				draw_list.add_line(
-					canvas.canvas_to_window(self.pos + Vec2::new(0.0, 4.0)),
-					canvas.canvas_to_window(self.pos + Vec2::new(2.0, 4.0)),
-					color
-				)
-					.thickness(th)
-					.build();
-
-				draw_list.add_line(
-					canvas.canvas_to_window(self.pos + Vec2::new(0.0, 0.0)),
-					canvas.canvas_to_window(self.pos + Vec2::new(2.0, 0.0)),
-					color
-				)
-					.thickness(th)
-					.build();
-
-				draw_list.add_line(
-					canvas.canvas_to_window(self.pos + Vec2::new(0.0, 4.0)),
-					canvas.canvas_to_window(self.pos + Vec2::new(0.0, 0.0)),
-					color
-				)
-					.thickness(th)
-					.build();
-
-				draw_list.add_circle(
-					canvas.canvas_to_window(self.pos + Vec2::new(4.5, 2.0)),
-					canvas.zoom * (GRID_SPACING / 2.0),
-					color
-				)
-					.thickness(th)
-					.build();
-			},
-			CompKind::XorGate => {
-				// Hogy a Node-ok rácsra illeszkedjenek
-				const OFFSET: Vec2 = Vec2::new(0.231, 0.0);
-
-				// Elülső görbe
-				{
-					draw_list.add_bezier_curve(
-						canvas.canvas_to_window(self.pos + Vec2::new(2.00, 4.0 - curve_y_offset)),
-						canvas.canvas_to_window(self.pos + Vec2::new(4.50, 4.0 - curve_y_offset)),
-						canvas.canvas_to_window(self.pos + Vec2::new(5.00, 2.0 - curve_y_offset)),
-						canvas.canvas_to_window(self.pos + Vec2::new(5.00, 2.0 - curve_y_offset)),
-						color
-					)
-						.thickness(th)
-						.build();
-
-					draw_list.add_bezier_curve(
-						canvas.canvas_to_window(self.pos + Vec2::new(2.00, 0.0 - curve_y_offset)),
-						canvas.canvas_to_window(self.pos + Vec2::new(4.50, 0.0 - curve_y_offset)),
-						canvas.canvas_to_window(self.pos + Vec2::new(5.00, 2.0 - curve_y_offset)),
-						canvas.canvas_to_window(self.pos + Vec2::new(5.00, 2.0 - curve_y_offset)),
-						color
-					)
-						.thickness(th)
-						.build();
-				}
-
-				// Hátsó görbe #1
-				let so = Vec2::new(0.7, 0.0);
-				{
-					draw_list.add_bezier_curve(
-						canvas.canvas_to_window(self.pos + so + OFFSET + Vec2::new(0.00, 0.0 - curve_y_offset)),
-						canvas.canvas_to_window(self.pos + so + OFFSET + Vec2::new(1.30, 1.0 - curve_y_offset)),
-						canvas.canvas_to_window(self.pos + so + OFFSET + Vec2::new(1.30, 3.0 - curve_y_offset)),
-						canvas.canvas_to_window(self.pos + so + OFFSET + Vec2::new(0.00, 4.0 - curve_y_offset)),
-						color
-					)
-						.thickness(th)
-						.build();
-				}
-
-				// Hátsó görbe #2
-				{
-					draw_list.add_bezier_curve(
-						canvas.canvas_to_window(self.pos + OFFSET + Vec2::new(0.00, 0.0 - curve_y_offset)),
-						canvas.canvas_to_window(self.pos + OFFSET + Vec2::new(1.30, 1.0 - curve_y_offset)),
-						canvas.canvas_to_window(self.pos + OFFSET + Vec2::new(1.30, 3.0 - curve_y_offset)),
-						canvas.canvas_to_window(self.pos + OFFSET + Vec2::new(0.00, 4.0 - curve_y_offset)),
-						color
-					)
-						.thickness(th)
-						.build();
-				}
-
-				draw_list.add_line(
-					canvas.canvas_to_window(self.pos + so + OFFSET + Vec2::new(0.0, 4.0)),
-					canvas.canvas_to_window(self.pos + Vec2::new(2.0, 4.0)),
-					color
-				)
-					.thickness(th)
-					.build();
-
-				draw_list.add_line(
-					canvas.canvas_to_window(self.pos + so + OFFSET + Vec2::new(0.0, 0.0)),
-					canvas.canvas_to_window(self.pos + Vec2::new(2.0, 0.0)),
-					color
-				)
-					.thickness(th)
-					.build();
-			},
-			CompKind::Input { state: _ } => {
-				draw_list.add_line(
-					canvas.canvas_to_window(self.pos + Vec2::new(0.0, 0.0)),
-					canvas.canvas_to_window(self.pos + Vec2::new(2.0, 0.0)),
-					color
-				)
-					.thickness(th)
-					.build();
-
-				draw_list.add_line(
-					canvas.canvas_to_window(self.pos + Vec2::new(2.0, 0.0)),
-					canvas.canvas_to_window(self.pos + Vec2::new(2.0, 2.0)),
-					color
-				)
-					.thickness(th)
-					.build();
-
-				draw_list.add_line(
-					canvas.canvas_to_window(self.pos + Vec2::new(2.0, 2.0)),
-					canvas.canvas_to_window(self.pos + Vec2::new(0.0, 2.0)),
-					color
-				)
-					.thickness(th)
-					.build();
-
-				draw_list.add_line(
-					canvas.canvas_to_window(self.pos + Vec2::new(0.0, 2.0)),
-					canvas.canvas_to_window(self.pos + Vec2::new(0.0, 0.0)),
-					color
-				)
-					.thickness(th)
-					.build();
-			}
-		}
+		self.kind.draw(self.pos, color, canvas, &draw_list);
 
 		ui.set_cursor_pos(canvas.canvas_to_window(self.pos));
 

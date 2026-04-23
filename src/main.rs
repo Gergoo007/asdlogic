@@ -204,13 +204,6 @@ impl ApplicationHandler for App {
 				);
 			}
 			WindowEvent::CloseRequested => event_loop.exit(),
-			WindowEvent::KeyboardInput { event, .. } => {
-				if let Key::Named(NamedKey::Escape) = event.logical_key {
-					if event.state.is_pressed() {
-						event_loop.exit();
-					}
-				}
-			}
 			WindowEvent::RedrawRequested => {
 				let now = Instant::now();
 				imgui

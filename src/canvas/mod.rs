@@ -6,7 +6,7 @@ use rmp_serde::Serializer;
 use serde::{Deserialize, Serialize};
 use strum::{EnumMessage, IntoEnumIterator};
 
-use crate::canvas::{component::{CompKind, Component}, inner::CanvasInner, nodes::{NodeHandler, check_driven, set_nodes}, wires::{Wire, WireKey, Wires}};
+use crate::{canvas::{component::{CompKind, Component}, inner::CanvasInner, nodes::{NodeHandler, check_driven, set_nodes}, wires::{Wire, WireKey, Wires}}, config};
 
 mod component;
 mod wires;
@@ -38,6 +38,12 @@ enum FileAction {
 }
 
 #[derive(Serialize, Deserialize)]
+enum ClipboardElement {
+	Wire { start: Vec2, end: Vec2},
+	Component { kind: CompKind, pos: Vec2 },
+}
+
+#[derive(Serialize, Deserialize)]
 pub struct Canvas {
 	pub inner: CanvasInner,
 	pub comps: CompStorage,
@@ -52,7 +58,13 @@ pub struct Canvas {
 	#[serde(skip)]
 	selection: Vec<ElemIndex>,
 	#[serde(skip)]
-	selection_start: Option<Vec2>,
+	selection_start: Vec2,
+	#[serde(skip)]
+	selection_ongoing: bool,
+
+	clipboard: Vec<ClipboardElement>,
+	#[serde(skip)]
+	pasting_ongoing: bool,
 }
 
 #[repr(C)]
@@ -81,7 +93,10 @@ impl Canvas {
 			dialog_thread: None,
 			action: FileAction::None,
 			selection: Vec::new(),
-			selection_start: None,
+			selection_start: Vec2::new(0.0, 0.0),
+			selection_ongoing: false,
+			clipboard: Vec::new(),
+			pasting_ongoing: false,
 		};
 		
 		s.add_comp(CompKind::OrGate, Vec2::new(0.0, -5.0));
@@ -312,11 +327,11 @@ impl Canvas {
 				}
 			}
 
-			if let Some(s1) = self.selection_start.take() {
+			if self.selection_ongoing {
 				for k in &keys {
 					let e1 = self.inner.window_to_canvas(ui.io().mouse_pos.into());
-					let e = Vec2::new(s1.x.max(e1.x), s1.y.max(e1.y));
-					let s = Vec2::new(s1.x.min(e1.x), s1.y.min(e1.y));
+					let e = Vec2::new(self.selection_start.x.max(e1.x), self.selection_start.y.max(e1.y));
+					let s = Vec2::new(self.selection_start.x.min(e1.x), self.selection_start.y.min(e1.y));
 					if (self.comps[*k].pos.x >= s.x && self.comps[*k].pos.x <= e.x) && (self.comps[*k].pos.y >= s.y && self.comps[*k].pos.y <= e.y) {
 						self.select(Some(ElemIndex::Comp(*k)));
 					}
@@ -324,8 +339,8 @@ impl Canvas {
 
 				for wi in &wkeys {
 					let e1 = self.inner.window_to_canvas(ui.io().mouse_pos.into());
-					let e = Vec2::new(s1.x.max(e1.x), s1.y.max(e1.y));
-					let s = Vec2::new(s1.x.min(e1.x), s1.y.min(e1.y));
+					let e = Vec2::new(self.selection_start.x.max(e1.x), self.selection_start.y.max(e1.y));
+					let s = Vec2::new(self.selection_start.x.min(e1.x), self.selection_start.y.min(e1.y));
 					if (
 					self.wires.wires[*wi].start.x >= s.x && self.wires.wires[*wi].start.x <= e.x) && (self.wires.wires[*wi].start.y >= s.y && self.wires.wires[*wi].start.y <= e.y &&
 					self.wires.wires[*wi].end.x >= s.x && self.wires.wires[*wi].end.x <= e.x) && (self.wires.wires[*wi].end.y >= s.y && self.wires.wires[*wi].end.y <= e.y
@@ -333,6 +348,8 @@ impl Canvas {
 						self.select(Some(ElemIndex::Wire(*wi)));
 					}
 				}
+
+				self.selection_ongoing = false;
 			}
 		}
 
@@ -340,12 +357,13 @@ impl Canvas {
 		{
 			if !ui.is_any_item_hovered() {
 				if ui.is_mouse_clicked(MouseButton::Left) {
-					self.selection_start.replace(self.inner.window_to_canvas(ui.io().mouse_pos.into()));
+					self.selection_start = self.inner.window_to_canvas(ui.io().mouse_pos.into());
+					self.selection_ongoing = true;
 				}
 			}
 
-			if let Some(start) = self.selection_start {
-				ui.get_window_draw_list().add_rect(self.inner.canvas_to_window(start), ui.io().mouse_pos, 0x06ffffff)
+			if self.selection_ongoing {
+				ui.get_window_draw_list().add_rect(self.inner.canvas_to_window(self.selection_start), ui.io().mouse_pos, 0x06ffffff)
 					.filled(true)
 					.build();
 			}
@@ -363,6 +381,28 @@ impl Canvas {
 				}
 			}
 			self.selection.clear();
+		}
+
+		// Vágólap logika
+		if ui.is_key_down(Key::LeftCtrl) && ui.is_key_pressed_no_repeat(Key::C) {
+			self.copy();
+			self.pasting_ongoing = true;
+		}
+
+		if ui.is_key_pressed_no_repeat(Key::Escape) {
+			self.pasting_ongoing = false;
+		}
+
+		if ui.is_key_down(Key::LeftCtrl) && ui.is_key_pressed_no_repeat(Key::V) {
+			self.pasting_ongoing = true;
+		}
+
+		if self.pasting_ongoing {
+			self.render_clipboard(ui);
+		}
+
+		if self.pasting_ongoing && ui.is_mouse_clicked(MouseButton::Left) {
+			self.paste(ui);
 		}
 	}
 
@@ -406,6 +446,66 @@ impl Canvas {
 			for (_, c) in &mut self.comps { c.selected = false; }
 			for (_, w) in &mut self.wires.wires { w.selected = false; }
 			self.selection.clear();
+		}
+	}
+
+	fn copy(&mut self) {
+		self.clipboard.clear();
+
+		let mut offset = Vec2::new(0.0, 0.0);
+		for s in &self.selection {
+			if let ElemIndex::Comp(c) = s {
+				if self.comps[*c].pos.x < offset.x { offset.x = self.comps[*c].pos.x; }
+				if self.comps[*c].pos.y < offset.y { offset.y = self.comps[*c].pos.y; }
+			} else if let ElemIndex::Wire(w) = s {
+				if self.wires.wires[*w].start.x < offset.x { offset.x = self.wires.wires[*w].start.x; }
+				if self.wires.wires[*w].start.y < offset.y { offset.y = self.wires.wires[*w].start.y; }
+
+				if self.wires.wires[*w].end.x < offset.x { offset.x = self.wires.wires[*w].end.x; }
+				if self.wires.wires[*w].end.y < offset.y { offset.y = self.wires.wires[*w].end.y; }
+			}
+		}
+
+		for s in &self.selection {
+			if let ElemIndex::Comp(c) = s {
+				self.clipboard.push(
+					ClipboardElement::Component {
+						kind: self.comps[*c].kind.clone(),
+						pos: self.comps[*c].pos - offset,
+					}
+				);
+			} else if let ElemIndex::Wire(w) = s {
+				self.clipboard.push(
+					ClipboardElement::Wire {
+						start: self.wires.wires[*w].start - offset,
+						end: self.wires.wires[*w].end - offset
+					}
+				);
+			}
+		}
+	}
+
+	fn render_clipboard(&self, ui: &imgui::Ui) {
+		let m = self.inner.window_to_canvas(ui.io().mouse_pos.into());
+		for e in &self.clipboard {
+			if let ClipboardElement::Component { kind, pos } = e {
+				kind.draw(m + *pos, 0xffffffff, &self.inner, &ui.get_window_draw_list());
+			} else if let ClipboardElement::Wire { start, end } = e {
+				ui.get_window_draw_list().add_line(self.inner.canvas_to_window(m + *start), self.inner.canvas_to_window(m + *end), 0xffffffff)
+					.thickness(config::WIRE_THICKNESS * self.inner.zoom)
+					.build();
+			}
+		}
+	}
+
+	fn paste(&mut self, ui: &imgui::Ui) {
+		let m = self.inner.window_to_canvas(ui.io().mouse_pos.into());
+		for i in 0..self.clipboard.len() {
+			if let ClipboardElement::Component { kind, pos } = &self.clipboard[i] {
+				self.add_comp(kind.clone(), m + pos);
+			} else if let ClipboardElement::Wire { start, end } = &self.clipboard[i] {
+				self.wires.try_add(Wire { start: m + start, end: m + end, startnode: None, endnode: None, selected: false }, &mut self.nodes, &self.comps, &mut self.update_generation);
+			}
 		}
 	}
 }
