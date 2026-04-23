@@ -100,6 +100,10 @@ impl Canvas {
 	}
 
 	pub fn draw(&mut self, ui: &imgui::Ui, device: &wgpu::Device, surface_desc: &wgpu::SurfaceConfiguration) {
+		if ui.is_key_pressed(Key::F3) {
+			self.inner.debug ^= true;
+		}
+
 		let mut flag = false;
 
 		if let Some(_menu1) = ui.begin_menu_bar() {
@@ -278,9 +282,7 @@ impl Canvas {
 			let logic_lvl = &self.nodes.node_storage[self.wires.wires[*wi].startnode.unwrap()].logic_lvl;
 			let argb = logic_lvl.to_color();
 
-			if self.wires.wires[*wi].draw(&self.inner, ui, Some(argb), Some(id)) {
-				println!("buooon clicked");
-			}
+			self.wires.wires[*wi].draw(&self.inner, ui, Some(argb), Some(id));
 
 			if ui.is_item_hovered() {
 				if ui.is_mouse_clicked(MouseButton::Left) {

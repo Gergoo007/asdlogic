@@ -26,17 +26,17 @@ impl Wire {
 	}
 
 	pub fn overwrite(&mut self, start: Vec2, end: Vec2, nodes: &mut NodeHandler, oldidx: WireKey, wires: &Wires, comps: &CompStorage, generation: &mut u32) {
-		let node1 = nodes.remove_node(self.start, ElemIndex::Wire(oldidx), wires, comps, generation);
-		let node2 = nodes.remove_node(self.end, ElemIndex::Wire(oldidx), wires, comps, generation);
+		let node1 = nodes.remove_node(self.start, ElemIndex::Wire(oldidx), wires, comps, generation, false);
+		let node2 = nodes.remove_node(self.end, ElemIndex::Wire(oldidx), wires, comps, generation, false);
 
 		self.start = start;
 		self.end = end;
 
-		nodes.add_node(Node { pos: self.start, owner: Some(ElemIndex::Wire(oldidx)), ..node1 });
-		nodes.add_node(Node { pos: self.end, owner: Some(ElemIndex::Wire(oldidx)), ..node2 });
+		self.startnode.replace(nodes.add_node(Node { pos: self.start, owner: Some(ElemIndex::Wire(oldidx)), ..node1 }));
+		self.endnode.replace(nodes.add_node(Node { pos: self.end, owner: Some(ElemIndex::Wire(oldidx)), ..node2 }));
 	}
 
-	pub fn draw(&self, canvas: &CanvasInner, ui: &imgui::Ui, color: Option<u32>, id: Option<u32>) -> bool {
+	pub fn draw(&self, canvas: &CanvasInner, ui: &imgui::Ui, color: Option<u32>, id: Option<u32>) {
 		if self.selected {
 			ui.get_window_draw_list().add_line(canvas.canvas_to_window(self.start), canvas.canvas_to_window(self.end), 0xffffffff)
 				.thickness((config::WIRE_THICKNESS + 3.0) * canvas.zoom)
@@ -46,8 +46,12 @@ impl Wire {
 			.thickness(config::WIRE_THICKNESS * canvas.zoom)
 			.build();
 
-		let mut clicked = false;
 		if let Some(id) = id {
+			ui.set_cursor_pos(canvas.canvas_to_window((self.start + self.end - 1.2 / canvas.zoom) / 2.0));
+			if canvas.debug {
+				ui.text(format!("w{}", id));
+			}
+
 			let s = Vec2::new(self.start.x.min(self.end.x), self.start.y.min(self.end.y));
 			let e = Vec2::new(self.start.x.max(self.end.x), self.start.y.max(self.end.y));
 
@@ -65,15 +69,13 @@ impl Wire {
 			}
 
 			ui.set_cursor_pos(pos);
-			clicked = ui.invisible_button(format!("wire{}", id), size);
+			ui.invisible_button(format!("wire{}", id), size);
 		}
-
-		clicked
 	}
 
 	pub fn touches(&self, p: Vec2) -> bool {
-		if self.start == p { return false; }
-		if self.end == p { return false; }
+		if self.start == p { return true; }
+		if self.end == p { return true; }
 
 		let v = self.end - self.start;
 		let w = p - self.start;
@@ -92,13 +94,13 @@ impl Wire {
 	}
 
 	// Megfelezi magát, és egy új vezeték koordinátáit adja vissza
-	pub fn split(&mut self, at: Vec2) -> Wire {
+	pub fn split(&mut self, at: Vec2, nodes: &mut NodeHandler, widx: WireKey, wires: &Wires, comps: &CompStorage, generation: &mut u32) -> Wire {
 		assert!(self.touches(at));
 		assert!(self.start != at);
 		assert!(self.end != at);
 
 		let oldend = self.end;
-
+		nodes.move_node(self.endnode.unwrap(), at - self.end, ElemIndex::Wire(widx), wires, comps, generation);
 		self.end = at;
 
 		Wire {
@@ -121,8 +123,8 @@ impl Wire {
 	}
 
 	pub fn remove_nodes(&self, nodes: &mut NodeHandler, widx: WireKey, wires: &Wires, comps: &CompStorage, generation: &mut u32) {
-		nodes.remove_node(nodes.node_storage[self.startnode.unwrap()].pos, ElemIndex::Wire(widx), wires, comps, generation);
-		nodes.remove_node(nodes.node_storage[self.endnode.unwrap()].pos, ElemIndex::Wire(widx), wires, comps, generation);
+		nodes.remove_node(nodes.node_storage[self.startnode.unwrap()].pos, ElemIndex::Wire(widx), wires, comps, generation, true);
+		nodes.remove_node(nodes.node_storage[self.endnode.unwrap()].pos, ElemIndex::Wire(widx), wires, comps, generation, true);
 	}
 }
 
@@ -171,7 +173,6 @@ impl Wires {
 			runanother = false;
 
 			let keys: Vec<_> = self.wires.iter().map(|(e, _)| e).collect();
-			// for (oldidx, old) in &mut self.wires {
 			for oldidx in keys {
 				let old = &self.wires[oldidx];
 				let v1 = old.start - old.end;
@@ -198,36 +199,34 @@ impl Wires {
 
 				// Az új vezetéket össze lehet vonni egy meglévővel (csak érintkeznek)
 				if parallel {
-					if nodes.count_nodes(old.start) == 1 {
-						if old.start == new.start {
-							self.overwrite(new.end, old.end, nodes, oldidx, comps, generation);
-							runanother = true; continue 'check;
-						} else if old.start == new.end {
-							self.overwrite(old.end, new.start, nodes, oldidx, comps, generation);
-							runanother = true; continue 'check;
-						} else if old.end == new.start {
-							self.overwrite(old.start, new.end, nodes, oldidx, comps, generation);
-							runanother = true; continue 'check;
-						} else if old.end == new.end {
-							self.overwrite(old.start, new.start, nodes, oldidx, comps, generation);
-							runanother = true; continue 'check;
-						}
+					if old.start == new.start && nodes.count_nodes(old.start) <= 1 {
+						self.overwrite(new.end, old.end, nodes, oldidx, comps, generation);
+						runanother = true; continue 'check;
+					} else if old.start == new.end && nodes.count_nodes(old.start) <= 1 {
+						self.overwrite(old.end, new.start, nodes, oldidx, comps, generation);
+						runanother = true; continue 'check;
+					} else if old.end == new.start && nodes.count_nodes(old.end) <= 1 {
+						self.overwrite(old.start, new.end, nodes, oldidx, comps, generation);
+						runanother = true; continue 'check;
+					} else if old.end == new.end && nodes.count_nodes(old.end) <= 1 {
+						self.overwrite(old.start, new.start, nodes, oldidx, comps, generation);
+						runanother = true; continue 'check;
 					}
 
 					// Az új vezetéket össze lehet vonni egy meglévővel (az egyik a másikból indul ki + párhuzamosak)
-					if old.touches(new.start) {
-						if new.touches(old.start) {
+					if old.touches(new.start) && nodes.count_nodes(new.start) <= 1 {
+						if new.touches(old.start) && nodes.count_nodes(old.start) <= 1 {
 							self.overwrite(old.end, new.end, nodes, oldidx, comps, generation);
 							runanother = true; continue 'check;
-						} else if new.touches(old.end) {
+						} else if new.touches(old.end) && nodes.count_nodes(old.end) <= 1 {
 							self.overwrite(old.start,new.end, nodes, oldidx, comps, generation);
 							runanother = true; continue 'check;
 						}
-					} else if old.touches(new.end) {
-						if new.touches(old.start) {
+					} else if old.touches(new.end) && nodes.count_nodes(new.end) <= 1 {
+						if new.touches(old.start) && nodes.count_nodes(old.start) <= 1 {
 							self.overwrite(old.end, new.start, nodes, oldidx, comps, generation);
 							runanother = true; continue 'check;
-						} else if new.touches(old.end) {
+						} else if new.touches(old.end) && nodes.count_nodes(old.end) <= 1 {
 							self.overwrite(old.start, new.start, nodes, oldidx, comps, generation);
 							runanother = true; continue 'check;
 						}
@@ -235,10 +234,16 @@ impl Wires {
 				} else {
 					if old.touches(new.start) && old.start != new.start && old.end != new.start {
 						assert!(secondwire.is_none());
-						secondwire.replace(self.wires[oldidx].split(new.start));
+						let mut oldw = self.wires[oldidx].clone();
+						let neww = oldw.split(new.start, nodes, oldidx, self, comps, generation);
+						self.wires[oldidx] = oldw;
+						secondwire.replace(neww);
 					} else if old.touches(new.end) && old.start != new.end && old.end != new.end {
 						assert!(thirdwire.is_none());
-						thirdwire.replace(self.wires[oldidx].split(new.end));
+						let mut oldw = self.wires[oldidx].clone();
+						let neww = oldw.split(new.end, nodes, oldidx, self, comps, generation);
+						self.wires[oldidx] = oldw;
+						thirdwire.replace(neww);
 					}
 				}
 			}

@@ -10,13 +10,11 @@ pub struct CanvasInner {
 	pub compid: u64,
 	pub grab_mouse_offset: Option<(u64, Vec2)>,
 	pub wire_horiz: bool,
-
+	pub debug: bool,
 		size: Vec2,
-
+		lastmouse: Option<Vec2>,
 		#[serde(skip)]
 		pipeline: Option<wgpu::RenderPipeline>, // TODO: MaybeUninit ha nagyon lelassítaná
-
-		lastmouse: Option<Vec2>,
 }
 
 impl CanvasInner {
@@ -84,6 +82,7 @@ impl CanvasInner {
 			compid: 0,
 			grab_mouse_offset: None,
 			wire_horiz: false,
+			debug: false,
 		};
 		s.create_pipeline(device, surface_desc);
 		s

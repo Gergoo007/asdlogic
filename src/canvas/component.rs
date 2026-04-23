@@ -457,7 +457,7 @@ impl Component {
 
 	pub fn remove_nodes(&self, nodes: &mut NodeHandler, cidx: CompKey, wires: &Wires, comps: &CompStorage, generation: &mut u32) {
 		for n in &self.nodes {
-			nodes.remove_node(nodes.node_storage[*n].pos, ElemIndex::Comp(cidx), wires, comps, generation);
+			nodes.remove_node(nodes.node_storage[*n].pos, ElemIndex::Comp(cidx), wires, comps, generation, true);
 		}
 	}
 }
