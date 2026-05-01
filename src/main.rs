@@ -9,7 +9,6 @@ use winit::{
 	dpi::LogicalSize,
 	event::{Event, WindowEvent},
 	event_loop::{ActiveEventLoop, ControlFlow, EventLoop},
-	keyboard::{Key, NamedKey},
 	window::Window,
 };
 
@@ -45,7 +44,9 @@ impl AppWindow {
 	fn setup_gpu(event_loop: &ActiveEventLoop) -> Self {
 		let instance = wgpu::Instance::new(wgpu::InstanceDescriptor {
 			backends: wgpu::Backends::VULKAN,
+			// backends: wgpu::Backends::DX12,
 			flags: InstanceFlags::debugging(),
+			// flags: InstanceFlags::empty(),
 			..wgpu::InstanceDescriptor::new_with_display_handle(Box::new(
 				event_loop.owned_display_handle(),
 			))
@@ -56,7 +57,7 @@ impl AppWindow {
 
 			let attributes = Window::default_attributes()
 				.with_inner_size(size)
-				.with_title(format!("turiplogic v0.000000000000002"));
+				.with_title(format!("turiplogic v0.000000000000003"));
 			Arc::new(event_loop.create_window(attributes).unwrap())
 		};
 
@@ -73,7 +74,7 @@ impl AppWindow {
 
 		let mut cfg = wgpu::DeviceDescriptor::default();
 		cfg.required_features.features_webgpu.set(FeaturesWebGPU::IMMEDIATES, true);
-		cfg.required_limits.max_immediate_size = 24;
+		cfg.required_limits.max_immediate_size = 32;
 
 		let (device, queue) =
 			block_on(adapter.request_device(&cfg)).unwrap();
@@ -235,29 +236,9 @@ impl ApplicationHandler for App {
 					.prepare_frame(imgui.context.io_mut(), &window.window)
 					.expect("Failed to prepare frame");
 
-				let ui = imgui.context.frame();
-
-				{
-					let imw = ui.window("w")
-						.position([0.0, 0.0], Condition::Always)
-						.size([1280.0, 720.0], Condition::Always)
-						.flags(WindowFlags::NO_BACKGROUND | WindowFlags::NO_MOVE | WindowFlags::NO_DECORATION |
-							WindowFlags::NO_SCROLLBAR | WindowFlags::NO_SCROLLBAR | WindowFlags::NO_SCROLL_WITH_MOUSE)
-						.menu_bar(true);
-
-					imw.build(|| {
-						window.canvas.draw(ui, &window.device, &window.surface_desc);
-					});
-				}
-
 				let mut encoder: wgpu::CommandEncoder = window
 					.device
 					.create_command_encoder(&wgpu::CommandEncoderDescriptor { label: None });
-
-				if imgui.last_cursor != ui.mouse_cursor() {
-					imgui.last_cursor = ui.mouse_cursor();
-					imgui.platform.prepare_render(ui, &window.window);
-				}
 
 				let view = frame
 					.texture
@@ -280,6 +261,26 @@ impl ApplicationHandler for App {
 				});
 
 				window.canvas.inner.draw_grid(&mut rpass);
+
+				let ui = imgui.context.frame();
+
+				{
+					let imw = ui.window("w")
+						.position([0.0, 0.0], Condition::Always)
+						.size([1280.0, 720.0], Condition::Always)
+						.flags(WindowFlags::NO_BACKGROUND | WindowFlags::NO_MOVE | WindowFlags::NO_DECORATION |
+							WindowFlags::NO_SCROLLBAR | WindowFlags::NO_SCROLLBAR | WindowFlags::NO_SCROLL_WITH_MOUSE)
+						.menu_bar(true);
+
+					imw.build(|| {
+						window.canvas.draw(ui, &window.device, &window.surface_desc, &mut rpass, &mut window.queue);
+					});
+				}
+
+				if imgui.last_cursor != ui.mouse_cursor() {
+					imgui.last_cursor = ui.mouse_cursor();
+					imgui.platform.prepare_render(ui, &window.window);
+				}
 
 				imgui
 					.renderer

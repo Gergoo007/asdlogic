@@ -36,12 +36,35 @@ impl Wire {
 		self.endnode.replace(nodes.add_node(Node { pos: self.end, owner: Some(ElemIndex::Wire(oldidx)), ..node2 }));
 	}
 
-	pub fn draw(&self, canvas: &CanvasInner, ui: &imgui::Ui, color: Option<u32>, id: Option<u32>) {
-		if self.selected {
-			ui.get_window_draw_list().add_line(canvas.canvas_to_window(self.start), canvas.canvas_to_window(self.end), 0xffffffff)
-				.thickness((config::WIRE_THICKNESS + 3.0) * canvas.zoom)
-				.build();
+	pub fn process(&self, canvas: &CanvasInner, ui: &imgui::Ui, id: Option<u32>) {
+		if let Some(id) = id {
+			ui.set_cursor_pos(canvas.canvas_to_window((self.start + self.end - 1.2 / canvas.zoom) / 2.0));
+			if canvas.debug {
+				ui.text(format!("w{}", id));
+			}
+
+			let s = Vec2::new(self.start.x.min(self.end.x), self.start.y.min(self.end.y));
+			let e = Vec2::new(self.start.x.max(self.end.x), self.start.y.max(self.end.y));
+
+			let mut size = canvas.canvas_to_window_size(s, e - s);
+			let mut pos = canvas.canvas_to_window(s);
+			let btnsize = config::WIRE_HITBOX_WIDTH * canvas.zoom;
+			if size.x == 0.0 {
+				size.x = btnsize;
+				pos.x -= btnsize / 2.0;
+			} else if size.y == 0.0 {
+				size.y = btnsize;
+				pos.y -= btnsize / 2.0;
+			} else {
+				unreachable!("Diagonal wires not supported yet!");
+			}
+
+			ui.set_cursor_pos(pos);
+			ui.invisible_button(format!("wire{}", id), size);
 		}
+	}
+
+	pub fn draw(&self, canvas: &CanvasInner, ui: &imgui::Ui, color: Option<u32>, id: Option<u32>) {
 		ui.get_window_draw_list().add_line(canvas.canvas_to_window(self.start), canvas.canvas_to_window(self.end), if let Some(c) = color { c } else { 0xffffffff })
 			.thickness(config::WIRE_THICKNESS * canvas.zoom)
 			.build();

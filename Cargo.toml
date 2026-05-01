@@ -23,8 +23,11 @@ typed-generational-arena = { version = "0.2.9", features = [ "serde" ] }
 wgpu = "29.0.1"
 winit = "0.30.13"
 
+[build-dependencies]
+shaderc = "0.10.1"
+
 [profile.release]
-# debug = true
+debug = true
 panic = "abort"
 
 [profile.dev]

@@ -1,18 +1,20 @@
-use std::{fmt::Debug, thread::{self, JoinHandle}};
+use std::{f32::consts::PI, fmt::Debug, thread::{self, JoinHandle}};
 
 use glam::IVec2;
 use imgui::{MouseButton, Key};
 use rmp_serde::Serializer;
 use serde::{Deserialize, Serialize};
 use strum::{EnumMessage, IntoEnumIterator};
+use wgpu::{Queue, RenderPass};
 
-use crate::{canvas::{component::{CompKind, Component}, inner::CanvasInner, nodes::{NodeHandler, check_driven, set_nodes}, wires::{Wire, WireKey, Wires}}, config};
+use crate::{canvas::{component::{CompKind, Component}, inner::CanvasInner, nodes::{NodeHandler, check_driven, set_nodes}, renderer::CanvasRenderer, wires::{Wire, WireKey, Wires}}, config};
 
 mod component;
 mod wires;
 mod inner;
 mod logic;
 mod nodes;
+mod renderer;
 
 pub type Vec2 = glam::Vec2;
 
@@ -63,8 +65,17 @@ pub struct Canvas {
 	selection_ongoing: bool,
 
 	clipboard: Vec<ClipboardElement>,
+	
 	#[serde(skip)]
 	pasting_ongoing: bool,
+
+	#[serde(skip)]
+	pub renderer: Option<CanvasRenderer>,
+
+	#[serde(skip)]
+	benchmarking: bool,
+	#[serde(skip)]
+	benchmark_cursor: Vec2, // polar coordinates; x is the radius, y is the angle
 }
 
 #[repr(C)]
@@ -97,6 +108,10 @@ impl Canvas {
 			selection_ongoing: false,
 			clipboard: Vec::new(),
 			pasting_ongoing: false,
+			renderer: Some(CanvasRenderer::new(device, surface_desc)),
+
+			benchmarking: false,
+			benchmark_cursor: Vec2::new(0.0, 0.0),
 		};
 		
 		s.add_comp(CompKind::OrGate, Vec2::new(0.0, -5.0));
@@ -114,9 +129,57 @@ impl Canvas {
 		s
 	}
 
-	pub fn draw(&mut self, ui: &imgui::Ui, device: &wgpu::Device, surface_desc: &wgpu::SurfaceConfiguration) {
+	pub fn draw(&mut self, ui: &imgui::Ui, device: &wgpu::Device, surface_desc: &wgpu::SurfaceConfiguration, rpass: &mut RenderPass, queue: &mut Queue) {
 		if ui.is_key_pressed(Key::F3) {
 			self.inner.debug ^= true;
+		}
+
+		if ui.is_key_pressed(Key::F4) {
+			self.benchmarking ^= true;
+			if self.benchmarking {
+				self.select(None);
+				self.comps.clear();
+				self.wires.wires.clear();
+				self.nodes.node_lookup.clear();
+				self.nodes.node_storage.clear();
+
+				self.benchmark_cursor = Vec2::new(8.0, 0.0);
+
+				self.inner.zoom = 0.1;
+			}
+		}
+
+		if self.benchmarking {
+			const KIND: CompKind = CompKind::XorGate;
+
+			self.add_comp(
+				KIND,
+				Vec2::new(
+					self.benchmark_cursor.x * self.benchmark_cursor.y.to_radians().cos(),
+					self.benchmark_cursor.x * self.benchmark_cursor.y.to_radians().sin(),
+				),
+			);
+
+			let circumference = 2.0 * self.benchmark_cursor.x * PI;
+			// Átló
+			let max_comp_size = KIND.hitbox().length() + 1.0;
+
+			let step = 360.0 / (circumference / (max_comp_size + 1.0));
+
+			if self.benchmark_cursor.y < (360.0 - step * 1.5) {
+				self.benchmark_cursor.y += step;
+			} else {
+				self.benchmark_cursor.x += max_comp_size;
+				self.benchmark_cursor.y = 0.0;
+			}
+
+			if (1.0 / ui.io().delta_time) < 40.0 {
+				self.benchmarking = false;
+			}
+
+			if self.comps.len() == 2200 {
+				self.inner.zoom = 0.05
+			}
 		}
 
 		let mut flag = false;
@@ -200,11 +263,15 @@ impl Canvas {
 			self.inner.pan += Vec2::from(ui.io().mouse_delta) / self.inner.zoom;
 		}
 
-		ui.text(format!("FPS: {:.2} ({:.2} ms)", 1.0 / ui.io().delta_time, ui.io().delta_time));
+		ui.text(format!("FPS: {:.2} ({:.2} ms)", 1.0 / ui.io().delta_time, ui.io().delta_time * 1000.0));
 		ui.text(format!("zoom: {}", self.inner.zoom));
 		let pos = self.inner.window_to_canvas(ui.io().mouse_pos.into());
 		ui.text(format!("mouse ({}, {})", pos.x, pos.y));
 		ui.text(format!("generation #{}", self.update_generation));
+		ui.text(format!("# of components: {}", self.comps.len()));
+		ui.text(format!("# of wires: {}", self.wires.wires.len()));
+		ui.text(format!("# of nodes: {}", self.nodes.node_storage.len()));
+		ui.text(format!("# of lines rendered: {}", self.renderer.as_ref().unwrap().linebuf_len()));
 
 		let coord = self.inner.window_to_canvas(ui.io().mouse_pos.into());
 		if self.nodes.count_nodes(coord) > 0 {
@@ -240,9 +307,17 @@ impl Canvas {
 		}
 		for w in newwires { self.wires.try_add(w, &mut self.nodes, &self.comps, &mut self.update_generation); }
 
+		let r = self.renderer.as_mut().unwrap();
+
+		// Rajzolás (Wire)
+		r.regenerate_buffer(&self.wires, &self.nodes.node_storage, &self.comps, self.inner.zoom, queue);
+
+		// Rajzolás (Comp)
+		r.render(rpass, &self.inner, [ surface_desc.width as f32, surface_desc.height as f32 ]);
+
 		let keys: Vec<_> = self.comps.iter().map(|(idx, _)| idx).collect();
 		'turip: for k in &keys {
-			if self.comps.get_mut(*k).unwrap().draw(&mut self.inner, ui) {
+			if self.comps.get_mut(*k).unwrap().process(&mut self.inner, ui) {
 				self.comps.get_mut(*k).unwrap().on_click();
 				self.comps[*k].update(&mut self.update_generation, &self.nodes.node_lookup, &mut self.nodes.node_storage, &self.wires, &self.comps);
 				self.update_generation += 1;
@@ -294,10 +369,7 @@ impl Canvas {
 		let mut id = 0;
 		let wkeys: Vec<_> = self.wires.wires.iter().map(|(idx, _)| idx).collect();
 		for wi in &wkeys {
-			let logic_lvl = &self.nodes.node_storage[self.wires.wires[*wi].startnode.unwrap()].logic_lvl;
-			let argb = logic_lvl.to_color();
-
-			self.wires.wires[*wi].draw(&self.inner, ui, Some(argb), Some(id));
+			self.wires.wires[*wi].process(&self.inner, ui, Some(id));
 
 			if ui.is_item_hovered() {
 				if ui.is_mouse_clicked(MouseButton::Left) {
@@ -312,11 +384,13 @@ impl Canvas {
 			id += 1;
 		}
 
-		for (_, node) in &self.nodes.node_lookup {
-			let nodeidx = node[0];
-			let node = &self.nodes.node_storage[nodeidx];
+		if self.inner.zoom >= 0.4 {
+			for (_, node) in &self.nodes.node_lookup {
+				let nodeidx = node[0];
+				let node = &self.nodes.node_storage[nodeidx];
 
-			node.draw(&mut self.inner, ui);
+				node.draw(&mut self.inner, ui);
+			}
 		}
 
 		// Egyenkénti kijelölés logika
