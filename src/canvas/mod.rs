@@ -114,6 +114,8 @@ impl Canvas {
 			benchmark_cursor: Vec2::new(0.0, 0.0),
 		};
 		
+		s.add_comp(CompKind::NandGate, Vec2::new(0.0, 5.0));
+
 		s.add_comp(CompKind::OrGate, Vec2::new(0.0, -5.0));
 		
 		s.add_comp(CompKind::AndGate, Vec2::new(0.0, 0.0));
@@ -265,6 +267,7 @@ impl Canvas {
 
 		ui.text(format!("FPS: {:.2} ({:.2} ms)", 1.0 / ui.io().delta_time, ui.io().delta_time * 1000.0));
 		ui.text(format!("zoom: {}", self.inner.zoom));
+		ui.text(format!("pan: {:?}", self.inner.pan));
 		let pos = self.inner.window_to_canvas(ui.io().mouse_pos.into());
 		ui.text(format!("mouse ({}, {})", pos.x, pos.y));
 		ui.text(format!("generation #{}", self.update_generation));
@@ -310,7 +313,7 @@ impl Canvas {
 		let r = self.renderer.as_mut().unwrap();
 
 		// Rajzolás (Wire)
-		r.regenerate_buffer(&self.wires, &self.nodes.node_storage, &self.comps, self.inner.zoom, queue);
+		r.regenerate_buffers(&self.wires, &self.nodes.node_storage, &self.nodes.node_lookup, &self.comps, &self.inner, queue);
 
 		// Rajzolás (Comp)
 		r.render(rpass, &self.inner, [ surface_desc.width as f32, surface_desc.height as f32 ]);
@@ -382,15 +385,6 @@ impl Canvas {
 			}
 
 			id += 1;
-		}
-
-		if self.inner.zoom >= 0.4 {
-			for (_, node) in &self.nodes.node_lookup {
-				let nodeidx = node[0];
-				let node = &self.nodes.node_storage[nodeidx];
-
-				node.draw(&mut self.inner, ui);
-			}
 		}
 
 		// Egyenkénti kijelölés logika

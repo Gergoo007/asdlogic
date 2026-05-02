@@ -1,7 +1,9 @@
+use core::f32;
+
 use bytemuck::{Pod, Zeroable};
 use wgpu::{Buffer, BufferDescriptor, BufferUsages, Queue, RenderPass, RenderPipeline, ShaderModuleDescriptor, VertexAttribute, VertexBufferLayout};
 
-use crate::canvas::{CompStorage, Vec2, component::ShapeElement, inner::CanvasInner, nodes::NodeStorage, wires::Wires};
+use crate::{canvas::{CompStorage, Vec2, component::ShapeElement, inner::CanvasInner, nodes::{NodeLookup, NodeStorage}, wires::Wires}, config::GRID_SPACING};
 
 #[repr(C)]
 #[derive(Clone, Copy, Zeroable, Pod, Debug)]
@@ -19,89 +21,182 @@ struct RenderImmediates {
 	zoom: f32,
 }
 
+#[repr(C)]
+#[derive(Clone, Copy, bytemuck::Pod, bytemuck::Zeroable)]
+struct NodeInput {
+	pos: [f32; 2],
+	filled: u32,
+	color: u32,
+}
+
 pub struct CanvasRenderer {
-	pipeline: Option<RenderPipeline>,
+	line_pipeline: Option<RenderPipeline>,
 	linebuf: Buffer,
 	linebuf_local: Vec<LineInput>,
+
+	node_pipeline: Option<RenderPipeline>,
+	nodebuf: Buffer,
+	nodebuf_local: Vec<NodeInput>,
 }
 
 const LINE_CAPACITY: u64 = 300000;
+const NODE_CAPACITY: u64 = 20000;
+
+fn check(v: f32, p1: f32, p2: f32) -> bool { v >= p1 && v <= p2 }
 
 impl CanvasRenderer {
-	pub fn create_pipeline(&mut self, device: &wgpu::Device, surface_desc: &wgpu::SurfaceConfiguration) {
-		let pipeline_layout =
-			device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
-				label: Some("Line render pipeline layout"),
-				bind_group_layouts: &[],
-				immediate_size: size_of::<RenderImmediates>() as u32,
+	pub fn create_pipelines(&mut self, device: &wgpu::Device, surface_desc: &wgpu::SurfaceConfiguration) {
+		{
+			let pipeline_layout =
+				device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
+					label: Some("Line render pipeline layout"),
+					bind_group_layouts: &[],
+					immediate_size: size_of::<RenderImmediates>() as u32,
+				});
+
+			let shader = device.create_shader_module(ShaderModuleDescriptor {
+				label: Some("turiplogic line shader"),
+				source: wgpu::ShaderSource::Wgsl(std::fs::read_to_string("lines.wgsl").expect("lines.wgsl not found!").into()),
 			});
 
-		let shader = device.create_shader_module(ShaderModuleDescriptor {
-			label: Some("turiplogic line shader"),
-			source: wgpu::ShaderSource::Wgsl(std::fs::read_to_string("lines.wgsl").expect("lines.wgsl not found!").into()),
-		});
+			let pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
+				label: Some("Render Pipeline"),
+				layout: Some(&pipeline_layout),
+				vertex: wgpu::VertexState {
+					module: &shader,
+					entry_point: Some("vs_main"),
+					buffers: &[
+						VertexBufferLayout {
+							array_stride: std::mem::size_of::<LineInput>() as wgpu::BufferAddress,
+							step_mode: wgpu::VertexStepMode::Instance,
+							attributes: &[
+								VertexAttribute {
+									format: wgpu::VertexFormat::Float32x2,
+									offset: 0,
+									shader_location: 0,
+								},
+								VertexAttribute {
+									format: wgpu::VertexFormat::Float32x2,
+									offset: std::mem::size_of::<[f32; 2]>() as wgpu::BufferAddress,
+									shader_location: 1,
+								},
+								VertexAttribute {
+									format: wgpu::VertexFormat::Uint32,
+									offset: std::mem::size_of::<[f32; 2]>() as wgpu::BufferAddress * 2,
+									shader_location: 2,
+								}
+							],
+						}
+					],
+					compilation_options: wgpu::PipelineCompilationOptions::default(),
+				},
+				fragment: Some(wgpu::FragmentState {
+					module: &shader,
+					entry_point: Some("fs_main"),
+					targets: &[Some(wgpu::ColorTargetState {
+						format: surface_desc.format,
+						blend: Some(wgpu::BlendState::ALPHA_BLENDING),
+						write_mask: wgpu::ColorWrites::ALL,
+					})],
+					compilation_options: wgpu::PipelineCompilationOptions::default(),
+				}),
+				primitive: wgpu::PrimitiveState {
+					topology: wgpu::PrimitiveTopology::TriangleStrip,
+					strip_index_format: None,
+					front_face: wgpu::FrontFace::Ccw,
+					cull_mode: None, // TODO
+					polygon_mode: wgpu::PolygonMode::Fill,
+					unclipped_depth: false,
+					conservative: false,
+				},
+				depth_stencil: None,
+				multisample: wgpu::MultisampleState {
+					count: 1,
+					mask: !0,
+					alpha_to_coverage_enabled: false,
+				},
+				multiview_mask: None,
+				cache: None,
+			});
 
-		let pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
-			label: Some("Render Pipeline"),
-			layout: Some(&pipeline_layout),
-			vertex: wgpu::VertexState {
-				module: &shader,
-				entry_point: Some("vs_main"),
-				buffers: &[
-					VertexBufferLayout {
-						array_stride: std::mem::size_of::<LineInput>() as wgpu::BufferAddress,
-						step_mode: wgpu::VertexStepMode::Instance,
-						attributes: &[
-							VertexAttribute {
-								format: wgpu::VertexFormat::Float32x2,
-								offset: 0,
-								shader_location: 0,
-							},
-							VertexAttribute {
-								format: wgpu::VertexFormat::Float32x2,
-								offset: std::mem::size_of::<[f32; 2]>() as wgpu::BufferAddress,
-								shader_location: 1,
-							},
-							VertexAttribute {
-								format: wgpu::VertexFormat::Uint32,
-								offset: std::mem::size_of::<[f32; 2]>() as wgpu::BufferAddress * 2,
-								shader_location: 2,
-							}
-						],
-					}
-				],
-				compilation_options: wgpu::PipelineCompilationOptions::default(),
-			},
-			fragment: Some(wgpu::FragmentState {
-				module: &shader,
-				entry_point: Some("fs_main"),
-				targets: &[Some(wgpu::ColorTargetState {
-					format: surface_desc.format,
-					blend: Some(wgpu::BlendState::ALPHA_BLENDING),
-					write_mask: wgpu::ColorWrites::ALL,
-				})],
-				compilation_options: wgpu::PipelineCompilationOptions::default(),
-			}),
-			primitive: wgpu::PrimitiveState {
-				topology: wgpu::PrimitiveTopology::TriangleList,
-				strip_index_format: None,
-				front_face: wgpu::FrontFace::Ccw,
-				cull_mode: None, // TODO
-				polygon_mode: wgpu::PolygonMode::Fill,
-				unclipped_depth: false,
-				conservative: false,
-			},
-			depth_stencil: None,
-			multisample: wgpu::MultisampleState {
-				count: 1,
-				mask: !0,
-				alpha_to_coverage_enabled: false,
-			},
-			multiview_mask: None,
-			cache: None,
-		});
+			self.line_pipeline.replace(pipeline);
+		}
 
-		self.pipeline.replace(pipeline);
+		{
+			let pipeline_layout =
+				device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
+					label: Some("Node render pipeline layout"),
+					bind_group_layouts: &[],
+					immediate_size: size_of::<RenderImmediates>() as u32,
+				});
+
+			let shader = device.create_shader_module(ShaderModuleDescriptor {
+				label: Some("turiplogic node shader"),
+				source: wgpu::ShaderSource::Wgsl(std::fs::read_to_string("node.wgsl").expect("node.wgsl not found!").into()),
+			});
+
+			let pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
+				label: Some("Render Pipeline"),
+				layout: Some(&pipeline_layout),
+				vertex: wgpu::VertexState {
+					module: &shader,
+					entry_point: Some("vs_main"),
+					buffers: &[
+						VertexBufferLayout {
+							array_stride: std::mem::size_of::<NodeInput>() as wgpu::BufferAddress,
+							step_mode: wgpu::VertexStepMode::Instance,
+							attributes: &[
+								VertexAttribute {
+									format: wgpu::VertexFormat::Float32x2,
+									offset: 0,
+									shader_location: 0,
+								},
+								VertexAttribute {
+									format: wgpu::VertexFormat::Uint32,
+									offset: std::mem::size_of::<[f32; 2]>() as wgpu::BufferAddress,
+									shader_location: 1,
+								},
+								VertexAttribute {
+									format: wgpu::VertexFormat::Uint32,
+									offset: (std::mem::size_of::<[f32; 2]>() + std::mem::size_of::<u32>()) as wgpu::BufferAddress,
+									shader_location: 2,
+								},
+							],
+						}
+					],
+					compilation_options: wgpu::PipelineCompilationOptions::default(),
+				},
+				fragment: Some(wgpu::FragmentState {
+					module: &shader,
+					entry_point: Some("fs_main"),
+					targets: &[Some(wgpu::ColorTargetState {
+						format: surface_desc.format,
+						blend: Some(wgpu::BlendState::ALPHA_BLENDING),
+						write_mask: wgpu::ColorWrites::ALL,
+					})],
+					compilation_options: wgpu::PipelineCompilationOptions::default(),
+				}),
+				primitive: wgpu::PrimitiveState {
+					topology: wgpu::PrimitiveTopology::TriangleStrip,
+					strip_index_format: None,
+					front_face: wgpu::FrontFace::Ccw,
+					cull_mode: None, // TODO
+					polygon_mode: wgpu::PolygonMode::Fill,
+					unclipped_depth: false,
+					conservative: false,
+				},
+				depth_stencil: None,
+				multisample: wgpu::MultisampleState {
+					count: 1,
+					mask: !0,
+					alpha_to_coverage_enabled: false,
+				},
+				multiview_mask: None,
+				cache: None,
+			});
+
+			self.node_pipeline.replace(pipeline);
+		}
 	}
 
 	fn cubic_bezier(p0: Vec2, p1: Vec2, p2: Vec2, p3: Vec2, t: f32) -> Vec2 {
@@ -121,25 +216,45 @@ impl CanvasRenderer {
 		let linebuf = device.create_buffer(&BufferDescriptor {
 			label: None,
 			mapped_at_creation: false,
-			size: size_of::<LineInput>() as u64 * LINE_CAPACITY, // 80 MiB
+			size: size_of::<LineInput>() as u64 * LINE_CAPACITY, // 6 MiB
+			usage: BufferUsages::VERTEX | BufferUsages::COPY_DST,
+		});
+
+		let nodebuf = device.create_buffer(&BufferDescriptor {
+			label: None,
+			mapped_at_creation: false,
+			size: size_of::<NodeInput>() as u64 * NODE_CAPACITY, // 160 KB
 			usage: BufferUsages::VERTEX | BufferUsages::COPY_DST,
 		});
 
 		let mut s = Self {
-			pipeline: None,
+			line_pipeline: None,
+			node_pipeline: None,
 			linebuf,
 			linebuf_local: Vec::with_capacity(LINE_CAPACITY as usize),
+			nodebuf,
+			nodebuf_local: Vec::with_capacity(NODE_CAPACITY as usize),
 		};
 
-		s.create_pipeline(device, surface_desc);
+		s.create_pipelines(device, surface_desc);
 
 		s
 	}
 
 	const SELECTCOLOR: u32 = 0xffaaaaaa;
 
-	pub fn regenerate_buffer(&mut self, wires: &Wires, nodes: &NodeStorage, comps: &CompStorage, zoom: f32, queue: &mut Queue) {
+	pub fn regenerate_buffers(&mut self, wires: &Wires, nodes: &NodeStorage, nodemap: &NodeLookup, comps: &CompStorage, canvas: &CanvasInner, queue: &mut Queue) {
 		self.linebuf_local.clear();
+		self.nodebuf_local.clear();
+
+		// Mennyi rács-egység fér a képernyőbe a jelenlegi zoommal
+		let visible_space = Vec2::new(1280.0, 720.0) / GRID_SPACING / canvas.zoom;
+		// Az ablakban látható legkisebb és legnagyobb Canvas koordináta
+		let corner1p = -((canvas.pan / GRID_SPACING) - visible_space / 2.0);
+		let corner2p = -((canvas.pan / GRID_SPACING) + visible_space / 2.0);
+		let corner1 = corner1p.min(corner2p);
+		let corner2 = corner1p.max(corner2p);
+
 		for (_, c) in comps {
 			if c.selected {
 				let hitbox = c.kind.hitbox();
@@ -151,29 +266,41 @@ impl CanvasRenderer {
 				let negy = -padding + c.pos.y;
 				let posy = padding + c.pos.y + hitbox.y;
 
-				self.linebuf_local.push(LineInput {
-					s: [ negx, negy ],
-					e: [ posx, negy ],
-					c: Self::SELECTCOLOR,
-				});
+				if check(negx, corner1.x, corner2.x) && check(negy, corner1.y, corner2.y) &&
+				check(posx, corner1.x, corner2.x) && check(negy, corner1.y, corner2.y) {
+					self.linebuf_local.push(LineInput {
+						s: [ negx, negy ],
+						e: [ posx, negy ],
+						c: Self::SELECTCOLOR,
+					});
+				}
 
-				self.linebuf_local.push(LineInput {
-					s: [ posx, negy ],
-					e: [ posx, posy ],
-					c: Self::SELECTCOLOR,
-				});
+				if check(posx, corner1.x, corner2.x) && check(negy, corner1.y, corner2.y) &&
+				check(posx, corner1.x, corner2.x) && check(posy, corner1.y, corner2.y) {
+					self.linebuf_local.push(LineInput {
+						s: [ posx, negy ],
+						e: [ posx, posy ],
+						c: Self::SELECTCOLOR,
+					});
+				}
 
-				self.linebuf_local.push(LineInput {
-					s: [ posx, posy ],
-					e: [ negx, posy ],
-					c: Self::SELECTCOLOR,
-				});
+				if check(posx, corner1.x, corner2.x) && check(posy, corner1.y, corner2.y) &&
+				check(negx, corner1.x, corner2.x) && check(posy, corner1.y, corner2.y) {
+					self.linebuf_local.push(LineInput {
+						s: [ posx, posy ],
+						e: [ negx, posy ],
+						c: Self::SELECTCOLOR,
+					});
+				}
 
-				self.linebuf_local.push(LineInput {
-					s: [ negx, posy ],
-					e: [ negx, negy ],
-					c: Self::SELECTCOLOR,
-				});
+				if check(negx, corner1.x, corner2.x) && check(posy, corner1.y, corner2.y) &&
+				check(negx, corner1.x, corner2.x) && check(negy, corner1.y, corner2.y) {
+					self.linebuf_local.push(LineInput {
+						s: [ negx, posy ],
+						e: [ negx, negy ],
+						c: Self::SELECTCOLOR,
+					});
+				}
 			}
 
 			for s in c.kind.shape() {
@@ -186,7 +313,7 @@ impl CanvasRenderer {
 						});
 					},
 					ShapeElement::Bezier(vec2, vec3, vec4, vec5) => {
-						let segments: u32 = match zoom {
+						let segments: u32 = match canvas.zoom {
 							0.0..0.1 => 2,
 							0.1..0.35 => 4,
 							0.35..1.0 => 16,
@@ -209,8 +336,12 @@ impl CanvasRenderer {
 						}
 
 					},
-					ShapeElement::Circle(_) => {
-						// builder.add_circle(point(vec2.x, vec2.y), 10.0, lyon::path::Winding::Positive);
+					ShapeElement::Circle(k) => {
+						self.nodebuf_local.push(NodeInput {
+							pos: (c.pos + k).into(),
+							filled: 0,
+							color: 0xffffffff,
+						});
 					},
 					ShapeElement::Nop => {},
 				}
@@ -258,17 +389,39 @@ impl CanvasRenderer {
 			});
 		}
 		queue.write_buffer(&self.linebuf, 0, bytemuck::cast_slice(&self.linebuf_local));
+
+		for (_, c2) in nodemap {
+			let p = nodes[c2[0]].pos;
+			if corner1.x <= p.x && p.x <= corner2.x &&
+			corner1.y <= p.y && p.y <= corner2.y {
+				self.nodebuf_local.push(NodeInput {
+					pos: p.into(),
+					filled: 1,
+					color: nodes[c2[0]].logic_lvl.to_color()
+				});
+			}
+		}
+		queue.write_buffer(&self.nodebuf, 0, bytemuck::cast_slice(&self.nodebuf_local));
 	}
 
 	pub fn render(&self, rpass: &mut RenderPass, canvas: &CanvasInner, wsize: [f32; 2]) {
-		rpass.set_pipeline(self.pipeline.as_ref().unwrap());
+		rpass.set_pipeline(self.line_pipeline.as_ref().unwrap());
 		rpass.set_immediates(0, bytemuck::bytes_of(&RenderImmediates {
 			pan: canvas.pan.into(),
 			zoom: canvas.zoom,
 			wsize,
 		}));
 		rpass.set_vertex_buffer(0, self.linebuf.slice(..));
-		rpass.draw(0..6, 0..self.linebuf_local.len() as u32);
+		rpass.draw(0..4, 0..self.linebuf_local.len() as u32);
+
+		rpass.set_pipeline(self.node_pipeline.as_ref().unwrap());
+		rpass.set_immediates(0, bytemuck::bytes_of(&RenderImmediates {
+			pan: canvas.pan.into(),
+			zoom: canvas.zoom,
+			wsize,
+		}));
+		rpass.set_vertex_buffer(0, self.nodebuf.slice(..));
+		rpass.draw(0..4, 0..self.nodebuf_local.len() as u32);
 	}
 
 	pub fn linebuf_len(&self) -> usize { self.linebuf_local.len() }

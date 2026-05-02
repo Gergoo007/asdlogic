@@ -11,6 +11,7 @@ use winit::{
 	event_loop::{ActiveEventLoop, ControlFlow, EventLoop},
 	window::Window,
 };
+use clap::Parser;
 
 mod config;
 mod canvas;
@@ -40,17 +41,36 @@ struct App {
 	window: Option<AppWindow>,
 }
 
+#[derive(Parser, Debug)]
+#[command(version, about, long_about = None)]
+struct Args {
+	#[arg(short, long, default_value_t = str::to_string("vulkan"))]
+	backend: String,
+
+	#[arg(short, long, default_value_t = false)]
+	validation: bool,
+}
+
 impl AppWindow {
 	fn setup_gpu(event_loop: &ActiveEventLoop) -> Self {
-		let instance = wgpu::Instance::new(wgpu::InstanceDescriptor {
-			backends: wgpu::Backends::VULKAN,
-			// backends: wgpu::Backends::DX12,
-			flags: InstanceFlags::debugging(),
-			// flags: InstanceFlags::empty(),
-			..wgpu::InstanceDescriptor::new_with_display_handle(Box::new(
-				event_loop.owned_display_handle(),
-			))
-		});
+		let args = Args::parse();
+		let f = if args.validation { InstanceFlags::debugging() } else { InstanceFlags::empty() };
+
+		let b = match args.backend.as_str() {
+			"vulkan" => wgpu::Backends::VULKAN,
+			"dx12" => wgpu::Backends::DX12,
+			"metal" => wgpu::Backends::METAL,
+			_ => panic!("Invalid backend ({})! Valid backends: vulkan, dx12, metal", args.backend),
+		};
+
+		let instance =
+			wgpu::Instance::new(wgpu::InstanceDescriptor {
+				backends: b,
+				flags: f,
+				..wgpu::InstanceDescriptor::new_with_display_handle(Box::new(
+					event_loop.owned_display_handle(),
+				))
+			});
 
 		let window = {
 			let size = LogicalSize::new(1280.0, 720.0);

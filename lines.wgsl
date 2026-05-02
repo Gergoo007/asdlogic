@@ -41,15 +41,30 @@ fn vs_main(
 	// let thickness = 2.0 * px * imm.zoom;
 	let thickness = max(px * 1.0, px * 1.5 * imm.zoom);
 
-	let dists = array<f32, 6>(1.0, -1.0, 1.0, 1.0, -1.0, -1.0);
+	// let dists = array<f32, 4>(1.0, -1.0, 1.0, 1.0, -1.0, -1.0);
+	// let d_sign = dists[vidx];
+
+	// let vertices = array<vec2<f32>, 4>(
+	// 	s + n * thickness,
+	// 	s - n * thickness,
+	// 	e + n * thickness,
+	// 	e + n * thickness,
+	// 	s - n * thickness,
+	// 	e - n * thickness,
+	// );
+
+	let dists = array<f32, 4>(
+		 1.0,
+		-1.0,
+		 1.0,
+		-1.0
+	);
 	let d_sign = dists[vidx];
 
-	let vertices = array<vec2<f32>, 6>(
+	let vertices = array<vec2<f32>, 4>(
 		s + n * thickness,
 		s - n * thickness,
 		e + n * thickness,
-		e + n * thickness,
-		s - n * thickness,
 		e - n * thickness,
 	);
 

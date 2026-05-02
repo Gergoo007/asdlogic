@@ -19,16 +19,8 @@ pub struct Node {
 }
 
 impl Node {
-	pub fn draw(&self, inner: &mut CanvasInner, ui: &imgui::Ui) {
-		ui.get_window_draw_list().add_circle(inner.canvas_to_window(self.pos), config::NODE_RADIUS * inner.zoom, self.logic_lvl.to_color())
-			.filled(true)
-			.build();
-	}
-
 	pub fn process(&self, nodeid: NodeKey, inner: &mut CanvasInner, ui: &imgui::Ui)
 	-> (Option<Wire>, Option<Wire>) {
-		// draw_list.add_circle(inner.canvas_to_window(self.pos), config::NODE_RADIUS, 0xffffffff).filled(true).build();
-
 		let offset = config::NODE_HITBOX / 2.0;
 
 		ui.set_cursor_pos(inner.canvas_to_window(self.pos - offset));

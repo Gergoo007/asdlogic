@@ -52,7 +52,7 @@ impl CompKind {
 				ShapeElement::Line(vec2(0.0, 4.0), vec2(2.0, 4.0)),
 				ShapeElement::Line(vec2(0.0, 0.0), vec2(2.0, 0.0)),
 				ShapeElement::Line(vec2(0.0, 4.0), vec2(0.0, 0.0)),
-				ShapeElement::Circle(vec2(4.5, 2.0)),
+				ShapeElement::Circle(vec2(4.42, 2.0)),
 				ShapeElement::Nop,
 			],
 			CompKind::XorGate => [
