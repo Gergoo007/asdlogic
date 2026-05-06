@@ -1,4 +1,4 @@
-use std::{f32::consts::PI, fmt::Debug, thread::{self, JoinHandle}};
+use std::{f32::consts::PI, fmt::{Debug, format}, thread::{self, JoinHandle}};
 
 use glam::IVec2;
 use imgui::{MouseButton, Key};
@@ -7,7 +7,7 @@ use serde::{Deserialize, Serialize};
 use strum::{EnumMessage, IntoEnumIterator};
 use wgpu::{Queue, RenderPass};
 
-use crate::{canvas::{component::{CompKind, Component}, inner::CanvasInner, nodes::{NodeHandler, check_driven, set_nodes}, renderer::CanvasRenderer, wires::{Wire, WireKey, Wires}}, config};
+use crate::{canvas::{component::{CompKind, Component}, history::{Action, History}, inner::CanvasInner, nodes::{NodeHandler, check_driven, set_nodes}, renderer::CanvasRenderer, wires::{Wire, WireKey, Wires}}, config};
 
 mod component;
 mod wires;
@@ -15,6 +15,7 @@ mod inner;
 mod logic;
 mod nodes;
 mod renderer;
+mod history;
 
 pub type Vec2 = glam::Vec2;
 
@@ -76,6 +77,10 @@ pub struct Canvas {
 	benchmarking: bool,
 	#[serde(skip)]
 	benchmark_cursor: Vec2, // polar coordinates; x is the radius, y is the angle
+	#[serde(skip)]
+	benchmark_frame_counter: u32, // mennyi képkocka deltája volt <40 fps; ha meg lesz az 5, akkor áll le a bm.
+
+	history: History,
 }
 
 #[repr(C)]
@@ -112,26 +117,135 @@ impl Canvas {
 
 			benchmarking: false,
 			benchmark_cursor: Vec2::new(0.0, 0.0),
+			benchmark_frame_counter: 0,
+
+			history: History::new()
 		};
-		
-		s.add_comp(CompKind::NandGate, Vec2::new(0.0, 5.0));
 
-		s.add_comp(CompKind::OrGate, Vec2::new(0.0, -5.0));
-		
-		s.add_comp(CompKind::AndGate, Vec2::new(0.0, 0.0));
+		s.start_record();
 
-		s.wires.try_add(Wire { start: Vec2::new(0.0, 1.0), end: Vec2::new(-5.0, 1.0), startnode: None, endnode: None, selected: false }, &mut s.nodes, &s.comps, &mut s.update_generation);
-		s.add_comp(CompKind::Input { state: false }, Vec2::new(-7.0, 0.0));
+		s.add_and_execute(Action::AddComp { to: Vec2::new(0.0, 5.0), kind: CompKind::NandGate });
+		s.add_and_execute(Action::AddComp { to: Vec2::new(0.0, -5.0), kind: CompKind::OrGate });
+		s.add_and_execute(Action::AddComp { to: Vec2::new(0.0, 0.0), kind: CompKind::AndGate });
 
-		s.wires.try_add(Wire { start: Vec2::new(0.0, 3.0), end: Vec2::new(-5.0, 3.0), startnode: None, endnode: None, selected: false }, &mut s.nodes, &s.comps, &mut s.update_generation);
-		s.add_comp(CompKind::Input { state: false }, Vec2::new(-7.0, 2.0));
+		s.checked_add_wire(Vec2::new(0.0, 1.0), Vec2::new(-5.0, 1.0));
+		s.add_and_execute(Action::AddComp { to: Vec2::new(-7.0, 0.0), kind: CompKind::Input { state: false } });
 
-		s.wires.try_add(Wire { start: Vec2::new(4.0, 2.0), end: Vec2::new(8.0, 2.0), startnode: None, endnode: None, selected: false }, &mut s.nodes, &s.comps, &mut s.update_generation);
+		s.checked_add_wire(Vec2::new(0.0, 3.0), Vec2::new(-5.0, 3.0));
+		s.add_and_execute(Action::AddComp { to: Vec2::new(-7.0, 2.0), kind: CompKind::Input { state: false } });
+
+		s.checked_add_wire(Vec2::new(4.0, 2.0), Vec2::new(8.0, 2.0));
+
+		s.end_record();
 
 		s
 	}
 
+	pub fn checked_split(&mut self, start: Vec2, end: Vec2, at: Vec2) {
+		self.add_and_execute(Action::OverwriteWire {
+			oldstart: start,
+			oldend: end,
+			newstart: start,
+			newend: at,
+		});
+		self.add_and_execute(Action::AddWire {
+			from: at,
+			to: end,
+		});
+	}
+
+	pub fn checked_add_wire(&mut self, from: Vec2, to: Vec2) {
+		let new = Wire { start: from, end: to, startnode: None, endnode: None, selected: false };
+
+		let mut runanother = true;
+		let mut insert = true;
+
+		'check: while runanother {
+			runanother = false;
+
+			let keys: Vec<_> = self.wires.wires.iter().map(|(e, _)| e).collect();
+			for oldidx in keys {
+				let old = &self.wires.wires[oldidx];
+				let v1 = old.start - old.end;
+				let v2 = new.start - new.end;
+				let parallel = v1.perp_dot(v2).abs() < 1e-6;
+
+				// Egy régi vezetékben elfér az új (tehát az új nem kell)
+				if old.touches(new.start) && old.touches(new.end) {
+					insert = false;
+					break 'check;
+				}
+
+				// Az új vezetékben elfér egy másik régebbi
+				if new.touches(old.start) && new.touches(old.end) {
+					// A régi vezetéknek vannak csatlakozásai
+					if self.nodes.count_nodes(old.start) >= 2 || self.nodes.count_nodes(old.end) >= 2 {
+						// Ezt az esetet hagyjuk is a gecibe, én biztos nem fogom ezt kezelni
+						return;
+					}
+
+					self.add_and_execute(Action::OverwriteWire { oldstart: old.start, oldend: old.end, newstart: new.start, newend: new.end });
+					runanother = true; continue 'check;
+				}
+
+				// Az új vezetéket össze lehet vonni egy meglévővel (csak érintkeznek)
+				if parallel {
+					if old.start == new.start && self.nodes.count_nodes(old.start) <= 1 {
+						self.add_and_execute(Action::OverwriteWire { oldstart: old.start, oldend: old.end, newstart: new.end, newend: old.end });
+						runanother = true; continue 'check;
+					} else if old.start == new.end && self.nodes.count_nodes(old.start) <= 1 {
+						self.add_and_execute(Action::OverwriteWire { oldstart: old.start, oldend: old.end, newstart: old.end, newend: new.start });
+						runanother = true; continue 'check;
+					} else if old.end == new.start && self.nodes.count_nodes(old.end) <= 1 {
+						self.add_and_execute(Action::OverwriteWire { oldstart: old.start, oldend: old.end, newstart: old.start, newend: new.end });
+						runanother = true; continue 'check;
+					} else if old.end == new.end && self.nodes.count_nodes(old.end) <= 1 {
+						self.add_and_execute(Action::OverwriteWire { oldstart: old.start, oldend: old.end, newstart: old.start, newend: new.start });
+						runanother = true; continue 'check;
+					}
+
+					// Az új vezetéket össze lehet vonni egy meglévővel (az egyik a másikból indul ki + párhuzamosak)
+					if old.touches(new.start) && self.nodes.count_nodes(new.start) <= 1 {
+						if new.touches(old.start) && self.nodes.count_nodes(old.start) <= 1 {
+							self.add_and_execute(Action::OverwriteWire { oldstart: old.start, oldend: old.end, newstart: old.end, newend: new.end });
+							runanother = true; continue 'check;
+						} else if new.touches(old.end) && self.nodes.count_nodes(old.end) <= 1 {
+							self.add_and_execute(Action::OverwriteWire { oldstart: old.start, oldend: old.end, newstart: old.start, newend: new.end, });
+							runanother = true; continue 'check;
+						}
+					} else if old.touches(new.end) && self.nodes.count_nodes(new.end) <= 1 {
+						if new.touches(old.start) && self.nodes.count_nodes(old.start) <= 1 {
+							self.add_and_execute(Action::OverwriteWire { oldstart: old.start, oldend: old.end, newstart: old.end, newend: new.start });
+							runanother = true; continue 'check;
+						} else if new.touches(old.end) && self.nodes.count_nodes(old.end) <= 1 {
+							self.add_and_execute(Action::OverwriteWire { oldstart: old.start, oldend: old.end, newstart: old.start, newend: new.start });
+							runanother = true; continue 'check;
+						}
+					}
+				} else {
+					if old.touches(new.start) && old.start != new.start && old.end != new.start {
+						self.checked_split(old.start, old.end, new.start);
+					} else if old.touches(new.end) && old.start != new.end && old.end != new.end {
+						self.checked_split(old.start, old.end, new.end);
+					}
+				}
+			}
+		}
+
+		if insert {
+			self.add_and_execute(Action::AddWire { from: new.start, to: new.end });
+		}
+	}
+
 	pub fn draw(&mut self, ui: &imgui::Ui, device: &wgpu::Device, surface_desc: &wgpu::SurfaceConfiguration, rpass: &mut RenderPass, queue: &mut Queue) {
+		if ui.is_key_down(Key::LeftCtrl) {
+			if ui.is_key_pressed(Key::Z) {
+				self.undo();
+			} else if ui.is_key_pressed(Key::Y) {
+				self.redo();
+			}
+		}
+
 		if ui.is_key_pressed(Key::F3) {
 			self.inner.debug ^= true;
 		}
@@ -176,7 +290,13 @@ impl Canvas {
 			}
 
 			if (1.0 / ui.io().delta_time) < 40.0 {
-				self.benchmarking = false;
+				if self.benchmark_frame_counter == 5 {
+					self.benchmarking = false;
+				} else {
+					self.benchmark_frame_counter += 1;
+				}
+			} else {
+				self.benchmark_frame_counter = 0;
 			}
 
 			if self.comps.len() == 2200 {
@@ -289,7 +409,8 @@ impl Canvas {
 				if let Some(_) = ui.begin_menu("Logic Gate") {
 					for asd in CompKind::iter() {
 						if ui.menu_item(format!("{}", asd.get_message().unwrap())) {
-							self.add_comp(asd, self.inner.get_mouse());
+							// self.add_comp(asd, self.inner.get_mouse());
+							self.record_and_execute(Action::AddComp { to: self.inner.get_mouse(), kind: asd });
 							self.inner.forget_mouse();
 						}
 					}
@@ -308,19 +429,23 @@ impl Canvas {
 			if let Some(w) = tobeadded.0 { newwires.push(w); }
 			if let Some(w) = tobeadded.1 { newwires.push(w); }
 		}
-		for w in newwires { self.wires.try_add(w, &mut self.nodes, &self.comps, &mut self.update_generation); }
+		if !newwires.is_empty() {
+			self.start_record();
+			for w in newwires { self.checked_add_wire(w.start, w.end); }
+			self.end_record();
+		}
 
 		let r = self.renderer.as_mut().unwrap();
 
 		// Rajzolás (Wire)
-		r.regenerate_buffers(&self.wires, &self.nodes.node_storage, &self.nodes.node_lookup, &self.comps, &self.inner, queue);
+		r.regenerate_buffers(device, &self.wires, &self.nodes.node_storage, &self.nodes.node_lookup, &self.comps, &self.inner, queue);
 
 		// Rajzolás (Comp)
 		r.render(rpass, &self.inner, [ surface_desc.width as f32, surface_desc.height as f32 ]);
 
 		let keys: Vec<_> = self.comps.iter().map(|(idx, _)| idx).collect();
 		'turip: for k in &keys {
-			if self.comps.get_mut(*k).unwrap().process(&mut self.inner, ui) {
+			if self.comps.get_mut(*k).unwrap().process(&mut self.inner, ui, *k) {
 				self.comps.get_mut(*k).unwrap().on_click();
 				self.comps[*k].update(&mut self.update_generation, &self.nodes.node_lookup, &mut self.nodes.node_storage, &self.wires, &self.comps);
 				self.update_generation += 1;
@@ -332,6 +457,16 @@ impl Canvas {
 					if !self.comps[*k].selected {
 						if !ui.is_key_down(Key::LeftShift) { self.select(None); }
 						self.select(Some(ElemIndex::Comp(*k)));
+					}
+
+					if !self.history.recording {
+						self.start_record();
+					}
+				}
+
+				if ui.is_mouse_released(MouseButton::Left) {
+					if self.history.recording {
+						self.end_record();
 					}
 				}
 			}
@@ -354,15 +489,11 @@ impl Canvas {
 
 				if newpos - self.comps[*k].pos != Vec2::new(0.0, 0.0) {
 					let move_by = newpos - self.comps[*k].pos;
-					for k in &self.selection {
-						if let ElemIndex::Comp(k) = *k {
-							let mut element = self.comps[k].clone();
-							element.move_by(move_by, &mut self.nodes, k, &self.wires, &self.comps, &mut self.update_generation);
-							self.comps[k] = element;
-						} else if let ElemIndex::Wire(k) = *k {
-							let mut element = self.wires.wires[k].clone();
-							element.move_by(move_by, k, &mut self.nodes, &self.wires, &self.comps, &mut self.update_generation);
-							self.wires.wires[k] = element;
+					for k in 0..self.selection.len() {
+						if let ElemIndex::Comp(k) = self.selection[k] {
+							self.add_and_execute(Action::MoveComp { from: self.comps[k].pos, to: self.comps[k].pos + move_by });
+						} else if let ElemIndex::Wire(k) = self.selection[k] {
+							self.add_and_execute(Action::MoveWire { from: self.wires.wires[k].start, to: self.wires.wires[k].end, by: move_by });
 						}
 					}
 				}
@@ -374,12 +505,31 @@ impl Canvas {
 		for wi in &wkeys {
 			self.wires.wires[*wi].process(&self.inner, ui, Some(id));
 
+			if ui.is_item_active() {
+				if self.inner.grab_mouse_offset.is_none() {
+					self.inner.grab_mouse_offset.replace((ElemIndex::Wire(*wi), self.inner.canvas_to_window(self.wires.wires[*wi].start) - Vec2::from(ui.io().mouse_pos)));
+				}
+			} else {
+				if let Some(turi) = self.inner.grab_mouse_offset {
+					if let ElemIndex::Wire(id) = turi.0 && id == *wi {
+						self.inner.grab_mouse_offset.take();
+					}
+				}
+			}
+
 			if ui.is_item_hovered() {
 				if ui.is_mouse_clicked(MouseButton::Left) {
 					// Ha a jelenleg hoverelt item is ki van már jelölve, akkor ne deszelektáljunk
 					if !self.wires.wires[*wi].selected {
-						if !ui.is_key_down(Key::LeftShift) { self.select(None); }
-						self.select(Some(ElemIndex::Wire(*wi)));
+						if ui.is_key_down(Key::LeftShift) {
+							self.select(None);
+							self.select(Some(ElemIndex::Wire(*wi)));
+						} else {
+							let mut w2 = self.wires.wires[*wi].clone();
+							let w3 = w2.split(self.inner.window_to_canvas(ui.io().mouse_pos.into()), &mut self.nodes, *wi, &self.wires, &self.comps, &mut self.update_generation);
+							self.wires.wires[*wi] = w2;
+							self.wires.add(w3.start, w3.end, &mut self.nodes);
+						}
 					}
 				}
 			}
@@ -500,6 +650,7 @@ impl Canvas {
 
 		let mut almost = Self::deserialize(&mut deser).expect("Failed to deserialize save file!");
 		almost.inner.create_pipeline(device, surface_desc);
+		almost.renderer.replace(CanvasRenderer::new(device, surface_desc));
 		almost
 	}
 

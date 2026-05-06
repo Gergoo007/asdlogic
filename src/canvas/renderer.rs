@@ -39,12 +39,24 @@ pub struct CanvasRenderer {
 	nodebuf_local: Vec<NodeInput>,
 }
 
-const LINE_CAPACITY: u64 = 300000;
-const NODE_CAPACITY: u64 = 20000;
+const INITIAL_LINE_CAPACITY: u64 = 300000;
+const SIZEOF_LINE: usize = size_of::<LineInput>();
+const INITIAL_NODE_CAPACITY: u64 = 80000;
+const SIZEOF_NODE: usize = size_of::<NodeInput>();
 
-fn check(v: f32, p1: f32, p2: f32) -> bool { v >= p1 && v <= p2 }
+// Igazat ad vissza ha egy pont két másik közé esik
+fn check(v: Vec2, p1: Vec2, p2: Vec2) -> bool { (v.x >= p1.x && v.x <= p2.x) && (v.y >= p1.y && v.y <= p2.y) }
 
 impl CanvasRenderer {
+	fn create_buffer(device: &wgpu::Device, size: u64) -> Buffer {
+		device.create_buffer(&BufferDescriptor {
+			label: None,
+			mapped_at_creation: false,
+			size: size,
+			usage: BufferUsages::VERTEX | BufferUsages::COPY_DST,
+		})
+	}
+
 	pub fn create_pipelines(&mut self, device: &wgpu::Device, surface_desc: &wgpu::SurfaceConfiguration) {
 		{
 			let pipeline_layout =
@@ -213,27 +225,16 @@ impl CanvasRenderer {
 	}
 
 	pub fn new(device: &wgpu::Device, surface_desc: &wgpu::SurfaceConfiguration) -> Self {
-		let linebuf = device.create_buffer(&BufferDescriptor {
-			label: None,
-			mapped_at_creation: false,
-			size: size_of::<LineInput>() as u64 * LINE_CAPACITY, // 6 MiB
-			usage: BufferUsages::VERTEX | BufferUsages::COPY_DST,
-		});
-
-		let nodebuf = device.create_buffer(&BufferDescriptor {
-			label: None,
-			mapped_at_creation: false,
-			size: size_of::<NodeInput>() as u64 * NODE_CAPACITY, // 160 KB
-			usage: BufferUsages::VERTEX | BufferUsages::COPY_DST,
-		});
+		let linebuf = Self::create_buffer(device, INITIAL_LINE_CAPACITY * SIZEOF_LINE as u64);
+		let nodebuf = Self::create_buffer(device, INITIAL_NODE_CAPACITY * SIZEOF_NODE as u64);
 
 		let mut s = Self {
 			line_pipeline: None,
 			node_pipeline: None,
 			linebuf,
-			linebuf_local: Vec::with_capacity(LINE_CAPACITY as usize),
+			linebuf_local: Vec::with_capacity(INITIAL_LINE_CAPACITY as usize),
 			nodebuf,
-			nodebuf_local: Vec::with_capacity(NODE_CAPACITY as usize),
+			nodebuf_local: Vec::with_capacity(INITIAL_NODE_CAPACITY as usize),
 		};
 
 		s.create_pipelines(device, surface_desc);
@@ -243,7 +244,7 @@ impl CanvasRenderer {
 
 	const SELECTCOLOR: u32 = 0xffaaaaaa;
 
-	pub fn regenerate_buffers(&mut self, wires: &Wires, nodes: &NodeStorage, nodemap: &NodeLookup, comps: &CompStorage, canvas: &CanvasInner, queue: &mut Queue) {
+	pub fn regenerate_buffers(&mut self, device: &wgpu::Device, wires: &Wires, nodes: &NodeStorage, nodemap: &NodeLookup, comps: &CompStorage, canvas: &CanvasInner, queue: &mut Queue) {
 		self.linebuf_local.clear();
 		self.nodebuf_local.clear();
 
@@ -256,6 +257,11 @@ impl CanvasRenderer {
 		let corner2 = corner1p.max(corner2p);
 
 		for (_, c) in comps {
+			// Ha se a bal teteje, se a jobb alja nincs a képernyőn akkor hagyjuk
+			if !check(c.pos, corner1, corner2) && !check(c.pos + c.kind.hitbox(), corner1, corner2) {
+				continue;
+			}
+
 			if c.selected {
 				let hitbox = c.kind.hitbox();
 				let padding = 0.5;
@@ -266,88 +272,82 @@ impl CanvasRenderer {
 				let negy = -padding + c.pos.y;
 				let posy = padding + c.pos.y + hitbox.y;
 
-				if check(negx, corner1.x, corner2.x) && check(negy, corner1.y, corner2.y) &&
-				check(posx, corner1.x, corner2.x) && check(negy, corner1.y, corner2.y) {
-					self.linebuf_local.push(LineInput {
-						s: [ negx, negy ],
-						e: [ posx, negy ],
-						c: Self::SELECTCOLOR,
-					});
-				}
+				self.linebuf_local.push(LineInput {
+					s: [ negx, negy ],
+					e: [ posx, negy ],
+					c: Self::SELECTCOLOR,
+				});
 
-				if check(posx, corner1.x, corner2.x) && check(negy, corner1.y, corner2.y) &&
-				check(posx, corner1.x, corner2.x) && check(posy, corner1.y, corner2.y) {
-					self.linebuf_local.push(LineInput {
-						s: [ posx, negy ],
-						e: [ posx, posy ],
-						c: Self::SELECTCOLOR,
-					});
-				}
+				self.linebuf_local.push(LineInput {
+					s: [ posx, negy ],
+					e: [ posx, posy ],
+					c: Self::SELECTCOLOR,
+				});
 
-				if check(posx, corner1.x, corner2.x) && check(posy, corner1.y, corner2.y) &&
-				check(negx, corner1.x, corner2.x) && check(posy, corner1.y, corner2.y) {
-					self.linebuf_local.push(LineInput {
-						s: [ posx, posy ],
-						e: [ negx, posy ],
-						c: Self::SELECTCOLOR,
-					});
-				}
+				self.linebuf_local.push(LineInput {
+					s: [ posx, posy ],
+					e: [ negx, posy ],
+					c: Self::SELECTCOLOR,
+				});
 
-				if check(negx, corner1.x, corner2.x) && check(posy, corner1.y, corner2.y) &&
-				check(negx, corner1.x, corner2.x) && check(negy, corner1.y, corner2.y) {
-					self.linebuf_local.push(LineInput {
-						s: [ negx, posy ],
-						e: [ negx, negy ],
-						c: Self::SELECTCOLOR,
-					});
-				}
+				self.linebuf_local.push(LineInput {
+					s: [ negx, posy ],
+					e: [ negx, negy ],
+					c: Self::SELECTCOLOR,
+				});
 			}
 
 			for s in c.kind.shape() {
 				match s {
 					ShapeElement::Line(vec2, vec3) => {
-						self.linebuf_local.push(LineInput {
+					self.linebuf_local.push(LineInput {
 							s: (c.pos + vec2).into(),
 							e: (c.pos + vec3).into(),
 							c: 0xffffffff,
 						});
 					},
 					ShapeElement::Bezier(vec2, vec3, vec4, vec5) => {
-						let segments: u32 = match canvas.zoom {
-							0.0..0.1 => 2,
-							0.1..0.35 => 4,
-							0.35..1.0 => 16,
-							1.0.. => 32,
-							_ => unreachable!("Invalid zoom value")
-						};
+						// let segments: u32 = match canvas.zoom {
+						// 	0.0..0.16 => 2,
+						// 	0.16..0.35 => 4,
+						// 	0.35..1.0 => 16,
+						// 	1.0.. => 32,
+						// 	_ => unreachable!("Invalid zoom value")
+						// };
+						let segments = (canvas.zoom * 0.6 * 32.0).clamp(2.0, 32.0) as u32;
 						for s in 1..=segments {
 							let mut v0 = Self::cubic_bezier(c.pos + vec2, c.pos + vec3, c.pos + vec4, c.pos + vec5, (s-1) as f32 / segments as f32);
 							let mut v1 = Self::cubic_bezier(c.pos + vec2, c.pos + vec3, c.pos + vec4, c.pos + vec5, s as f32 / segments as f32);
 							let stitching_fix = 0.01;
 							v0 -= stitching_fix * (v1 - v0).normalize();
 							v1 -= stitching_fix * (v0 - v1).normalize();
-							self.linebuf_local.push(
-								LineInput {
-									s: v0.into(),
-									e: v1.into(),
-									c: 0xffffffff,
-								}
-							);
+							self.linebuf_local.push(LineInput {
+								s: v0.into(),
+								e: v1.into(),
+								c: 0xffffffff,
+							});
 						}
 
 					},
 					ShapeElement::Circle(k) => {
-						self.nodebuf_local.push(NodeInput {
-							pos: (c.pos + k).into(),
-							filled: 0,
-							color: 0xffffffff,
-						});
+						let p = c.pos + k;
+						if check(p, corner1, corner2) {
+							self.nodebuf_local.push(NodeInput {
+								pos: p.into(),
+								filled: 0,
+								color: 0xffffffff,
+							});
+						}
 					},
 					ShapeElement::Nop => {},
 				}
 			}
 		}
 		for (_, w) in &wires.wires {
+			if !check(w.start, corner1, corner2) && !check(w.end, corner1, corner2) {
+				continue;
+			}
+
 			if w.selected {
 				let padding = 0.5;
 
@@ -388,6 +388,9 @@ impl CanvasRenderer {
 				c: nodes[w.startnode.unwrap()].logic_lvl.to_color()
 			});
 		}
+		if (self.linebuf.size() as usize) < (self.linebuf_local.len() * SIZEOF_LINE) {
+			self.linebuf = Self::create_buffer(device, self.linebuf.size() * 4);
+		}
 		queue.write_buffer(&self.linebuf, 0, bytemuck::cast_slice(&self.linebuf_local));
 
 		for (_, c2) in nodemap {
@@ -400,6 +403,9 @@ impl CanvasRenderer {
 					color: nodes[c2[0]].logic_lvl.to_color()
 				});
 			}
+		}
+		if (self.nodebuf.size() as usize) < (self.nodebuf_local.len() * SIZEOF_NODE) {
+			self.nodebuf = Self::create_buffer(device, self.nodebuf.size() * 4);
 		}
 		queue.write_buffer(&self.nodebuf, 0, bytemuck::cast_slice(&self.nodebuf_local));
 	}

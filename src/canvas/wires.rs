@@ -25,7 +25,7 @@ impl Wire {
 		}
 	}
 
-	pub fn overwrite(&mut self, start: Vec2, end: Vec2, nodes: &mut NodeHandler, oldidx: WireKey, wires: &Wires, comps: &CompStorage, generation: &mut u32) {
+	pub fn modify(&mut self, start: Vec2, end: Vec2, nodes: &mut NodeHandler, oldidx: WireKey, wires: &Wires, comps: &CompStorage, generation: &mut u32) {
 		let node1 = nodes.remove_node(self.start, ElemIndex::Wire(oldidx), wires, comps, generation, false);
 		let node2 = nodes.remove_node(self.end, ElemIndex::Wire(oldidx), wires, comps, generation, false);
 
@@ -163,7 +163,7 @@ impl Wires {
 		}
 	}
 
-	fn add(&mut self, start: Vec2, end: Vec2, nodes: &mut NodeHandler) -> WireKey {
+	pub fn add(&mut self, start: Vec2, end: Vec2, nodes: &mut NodeHandler) -> WireKey {
 		let wire = self.wires.insert(Wire::skeleton(start, end));
 
 		let mut ll1 = nodes.query_node(start);
@@ -180,7 +180,7 @@ impl Wires {
 
 	fn overwrite(&mut self, start: Vec2, end: Vec2, nodes: &mut NodeHandler, oldidx: WireKey, comps: &CompStorage, generation: &mut u32) {
 		let mut w = self.wires[oldidx].clone();
-		w.overwrite(start, end, nodes, oldidx, self, comps, generation);
+		w.modify(start, end, nodes, oldidx, self, comps, generation);
 		self.wires[oldidx] = w;
 	}
 

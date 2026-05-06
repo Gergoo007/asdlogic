@@ -5,7 +5,7 @@ use serde::{Deserialize, Serialize};
 use crate::{canvas::{CanvasInner, CompKey, CompStorage, ElemIndex, NodeHandler, Vec2, logic::LL, nodes::{Node, NodeKey, NodeLookup, NodeStorage}, set_nodes, wires::Wires}, config::{self, GRID_SPACING}};
 
 #[allow(unused)]
-#[derive(strum::EnumIter, strum::EnumMessage, Debug, PartialEq, Clone, Serialize, Deserialize)]
+#[derive(strum::EnumIter, strum::EnumMessage, Debug, PartialEq, Clone, Copy, Serialize, Deserialize)]
 pub enum CompKind {
 	#[strum(message = "AND Gate")]	AndGate,
 	#[strum(message = "OR Gate")]	OrGate,
@@ -184,7 +184,7 @@ impl Component {
 		}
 	}
 
-	pub fn process(&mut self, canvas: &mut CanvasInner, ui: &imgui::Ui) -> bool {
+	pub fn process(&mut self, canvas: &mut CanvasInner, ui: &imgui::Ui, cidx: CompKey) -> bool {
 		let mut clicked = false;
 
 		ui.set_cursor_pos(canvas.canvas_to_window(self.pos));
@@ -196,12 +196,12 @@ impl Component {
 
 		if ui.is_item_active() {
 			if canvas.grab_mouse_offset.is_none() {
-				canvas.grab_mouse_offset.replace((self.id, canvas.canvas_to_window(self.pos) - Vec2::from(ui.io().mouse_pos)));
+				canvas.grab_mouse_offset.replace((ElemIndex::Comp(cidx), canvas.canvas_to_window(self.pos) - Vec2::from(ui.io().mouse_pos)));
 			}
 			self.move_request.replace(canvas.window_to_canvas(canvas.grab_mouse_offset.unwrap().1 + Vec2::from(ui.io().mouse_pos)));
 		} else {
 			if let Some(turi) = canvas.grab_mouse_offset {
-				if turi.0 == self.id {
+				if let ElemIndex::Comp(id) = turi.0 && id == cidx {
 					canvas.grab_mouse_offset.take();
 				}
 			}

@@ -1,6 +1,7 @@
 use std::collections::HashMap;
 
 use glam::IVec2;
+use imgui::Key;
 use serde::{Deserialize, Serialize};
 
 use crate::{canvas::{CompStorage, ElemIndex, Vec2, inner::CanvasInner, logic::LL, vec2int, wires::{Wire, Wires}}, config};
@@ -69,15 +70,19 @@ impl Node {
 			}
 		}
 
-		if active {
+		if active && !inner.wire_draw_cancelled {
+			if ui.is_key_pressed_no_repeat(Key::Escape) {
+				inner.wire_draw_cancelled = true;
+			}
 			w1.draw(inner, ui, None, None);
 			w2.draw(inner, ui, None, None);
 		}
 
 		let mut ret = (None, None);
 		if deactivated {
-			if w1.start != w1.end { ret.0.replace(w1); }
-			if w2.start != w2.end { ret.1.replace(w2); }
+			if w1.start != w1.end && !inner.wire_draw_cancelled { ret.0.replace(w1); }
+			if w2.start != w2.end && !inner.wire_draw_cancelled { ret.1.replace(w2); }
+			inner.wire_draw_cancelled = false;
 		}
 		return ret;
 	}

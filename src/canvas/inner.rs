@@ -1,20 +1,22 @@
 use serde::{Deserialize, Serialize};
 use wgpu::ShaderModuleDescriptor;
 
-use crate::{canvas::{Immediates, Vec2}, config};
+use crate::{canvas::{ElemIndex, Immediates, Vec2}, config};
 
 #[derive(Serialize, Deserialize)]
 pub struct CanvasInner {
 	pub pan: Vec2,
 	pub zoom: f32,
 	pub compid: u64,
-	pub grab_mouse_offset: Option<(u64, Vec2)>,
+	pub grab_mouse_offset: Option<(ElemIndex, Vec2)>,
 	pub wire_horiz: bool,
 	pub debug: bool,
 		size: Vec2,
 		lastmouse: Option<Vec2>,
 		#[serde(skip)]
 		pipeline: Option<wgpu::RenderPipeline>, // TODO: MaybeUninit ha nagyon lelassítaná
+		#[serde(skip)]
+	pub wire_draw_cancelled: bool,
 }
 
 impl CanvasInner {
@@ -83,6 +85,7 @@ impl CanvasInner {
 			grab_mouse_offset: None,
 			wire_horiz: false,
 			debug: false,
+			wire_draw_cancelled: false,
 		};
 		s.create_pipeline(device, surface_desc);
 		s

@@ -77,7 +77,7 @@ impl AppWindow {
 
 			let attributes = Window::default_attributes()
 				.with_inner_size(size)
-				.with_title(format!("turiplogic v0.000000000000003"));
+				.with_title(format!("turiplogic v0.000000000000004"));
 			Arc::new(event_loop.create_window(attributes).unwrap())
 		};
 
