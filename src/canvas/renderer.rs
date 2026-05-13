@@ -45,7 +45,9 @@ const INITIAL_NODE_CAPACITY: u64 = 80000;
 const SIZEOF_NODE: usize = size_of::<NodeInput>();
 
 // Igazat ad vissza ha egy pont két másik közé esik
-fn check(v: Vec2, p1: Vec2, p2: Vec2) -> bool { (v.x >= p1.x && v.x <= p2.x) && (v.y >= p1.y && v.y <= p2.y) }
+fn check(v: Vec2, p1: Vec2, p2: Vec2) -> bool {
+	(v.x >= p1.x && v.x <= p2.x) && (v.y >= p1.y && v.y <= p2.y)
+}
 
 impl CanvasRenderer {
 	fn create_buffer(device: &wgpu::Device, size: u64) -> Buffer {
@@ -244,17 +246,18 @@ impl CanvasRenderer {
 
 	const SELECTCOLOR: u32 = 0xffaaaaaa;
 
-	pub fn regenerate_buffers(&mut self, device: &wgpu::Device, wires: &Wires, nodes: &NodeStorage, nodemap: &NodeLookup, comps: &CompStorage, canvas: &CanvasInner, queue: &mut Queue) {
+	pub fn regenerate_buffers(&mut self, device: &wgpu::Device, wsize: Vec2, wires: &Wires, nodes: &NodeStorage, nodemap: &NodeLookup, comps: &CompStorage, canvas: &CanvasInner, queue: &mut Queue) {
 		self.linebuf_local.clear();
 		self.nodebuf_local.clear();
 
 		// Mennyi rács-egység fér a képernyőbe a jelenlegi zoommal
-		let visible_space = Vec2::new(1280.0, 720.0) / GRID_SPACING / canvas.zoom;
+		let visible_space = wsize / GRID_SPACING / canvas.zoom + 1.0;
 		// Az ablakban látható legkisebb és legnagyobb Canvas koordináta
 		let corner1p = -((canvas.pan / GRID_SPACING) - visible_space / 2.0);
 		let corner2p = -((canvas.pan / GRID_SPACING) + visible_space / 2.0);
 		let corner1 = corner1p.min(corner2p);
 		let corner2 = corner1p.max(corner2p);
+		// println!("corner1 {:?} {:?}", corner1, corner2);
 
 		for (_, c) in comps {
 			// Ha se a bal teteje, se a jobb alja nincs a képernyőn akkor hagyjuk

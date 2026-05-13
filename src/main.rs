@@ -1,3 +1,4 @@
+use glam::Vec2;
 use imgui::*;
 use imgui_wgpu::{Renderer, RendererConfig};
 use imgui_winit_support::WinitPlatform;
@@ -72,11 +73,10 @@ impl AppWindow {
 				))
 			});
 
+		let init_size = LogicalSize::new(1280.0, 720.0);
 		let window = {
-			let size = LogicalSize::new(1280.0, 720.0);
-
 			let attributes = Window::default_attributes()
-				.with_inner_size(size)
+				.with_inner_size(init_size)
 				.with_title(format!("turiplogic v0.000000000000004"));
 			Arc::new(event_loop.create_window(attributes).unwrap())
 		};
@@ -106,7 +106,7 @@ impl AppWindow {
 			width: size.width,
 			height: size.height,
 			present_mode: wgpu::PresentMode::AutoNoVsync,
-			desired_maximum_frame_latency: 2,
+			desired_maximum_frame_latency: 4,
 			alpha_mode: wgpu::CompositeAlphaMode::Auto,
 			view_formats: vec![wgpu::TextureFormat::Bgra8Unorm],
 		};
@@ -115,7 +115,7 @@ impl AppWindow {
 
 		let imgui = None;
 
-		let project = canvas::Canvas::new(&glam::vec2(1280.0, 720.0), &device, &surface_desc);
+		let project = canvas::Canvas::new(&Vec2::new(surface_desc.width as f32, surface_desc.height as f32), &device, &surface_desc);
 
 		Self {
 			device,
@@ -197,11 +197,15 @@ impl ApplicationHandler for App {
 
 		match &event {
 			WindowEvent::Resized(size) => {
-				window.surface_desc.width = size.width;
-				window.surface_desc.height = size.height;
-				window
-					.surface
-					.configure(&window.device, &window.surface_desc);
+				if size.width != 0 && size.height != 0 {
+					window.surface_desc.width = size.width;
+					window.surface_desc.height = size.height;
+					window
+						.surface
+						.configure(&window.device, &window.surface_desc);
+
+					window.canvas.inner.size = Vec2::new(size.width as f32, size.height as f32);
+				}
 			}
 			WindowEvent::ScaleFactorChanged { scale_factor, .. } => {
 				window.hidpi_factor = *scale_factor;
@@ -287,10 +291,10 @@ impl ApplicationHandler for App {
 				{
 					let imw = ui.window("w")
 						.position([0.0, 0.0], Condition::Always)
-						.size([1280.0, 720.0], Condition::Always)
+						.size([ window.surface_desc.width as f32, window.surface_desc.height as f32 ], Condition::Always)
 						.flags(WindowFlags::NO_BACKGROUND | WindowFlags::NO_MOVE | WindowFlags::NO_DECORATION |
 							WindowFlags::NO_SCROLLBAR | WindowFlags::NO_SCROLLBAR | WindowFlags::NO_SCROLL_WITH_MOUSE)
-						.menu_bar(true);
+						.menu_bar(false);
 
 					imw.build(|| {
 						window.canvas.draw(ui, &window.device, &window.surface_desc, &mut rpass, &mut window.queue);

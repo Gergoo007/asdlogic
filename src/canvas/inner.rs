@@ -11,7 +11,7 @@ pub struct CanvasInner {
 	pub grab_mouse_offset: Option<(ElemIndex, Vec2)>,
 	pub wire_horiz: bool,
 	pub debug: bool,
-		size: Vec2,
+	pub size: Vec2,
 		lastmouse: Option<Vec2>,
 		#[serde(skip)]
 		pipeline: Option<wgpu::RenderPipeline>, // TODO: MaybeUninit ha nagyon lelassítaná
@@ -29,8 +29,8 @@ impl CanvasInner {
 			});
 
 		let shader = device.create_shader_module(ShaderModuleDescriptor {
-			label: Some("turiplogic vertex shader"),
-			source: wgpu::ShaderSource::Wgsl(std::fs::read_to_string("shader.wgsl").expect("shader.wgsl not found!").into()),
+			label: Some("turiplogic background shader"),
+			source: wgpu::ShaderSource::Wgsl(std::fs::read_to_string("background.wgsl").expect("background.wgsl not found!").into()),
 		});
 
 		let pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {

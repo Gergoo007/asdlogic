@@ -1,4 +1,4 @@
-use std::{f32::consts::PI, fmt::{Debug, format}, thread::{self, JoinHandle}};
+use std::{f32::consts::PI, fmt::Debug, thread::{self, JoinHandle}};
 
 use glam::IVec2;
 use imgui::{MouseButton, Key};
@@ -80,6 +80,12 @@ pub struct Canvas {
 	#[serde(skip)]
 	benchmark_frame_counter: u32, // mennyi képkocka deltája volt <40 fps; ha meg lesz az 5, akkor áll le a bm.
 
+	// A grafikonhoz
+	#[serde(skip)]
+	deltas: Vec<f32>,
+	#[serde(skip)]
+	deltas_datapoints: usize,
+
 	history: History,
 }
 
@@ -118,6 +124,8 @@ impl Canvas {
 			benchmarking: false,
 			benchmark_cursor: Vec2::new(0.0, 0.0),
 			benchmark_frame_counter: 0,
+			deltas: Vec::with_capacity(100),
+			deltas_datapoints: 100,
 
 			history: History::new()
 		};
@@ -385,6 +393,11 @@ impl Canvas {
 			self.inner.pan += Vec2::from(ui.io().mouse_delta) / self.inner.zoom;
 		}
 
+		self.deltas.push(ui.io().delta_time * 1000.0);
+		if self.deltas.len() > self.deltas_datapoints {
+			self.deltas.remove(0);
+		}
+
 		ui.text(format!("FPS: {:.2} ({:.2} ms)", 1.0 / ui.io().delta_time, ui.io().delta_time * 1000.0));
 		ui.text(format!("zoom: {}", self.inner.zoom));
 		ui.text(format!("pan: {:?}", self.inner.pan));
@@ -395,6 +408,11 @@ impl Canvas {
 		ui.text(format!("# of wires: {}", self.wires.wires.len()));
 		ui.text(format!("# of nodes: {}", self.nodes.node_storage.len()));
 		ui.text(format!("# of lines rendered: {}", self.renderer.as_ref().unwrap().linebuf_len()));
+		ui.plot_histogram("turip", self.deltas.as_slice())
+			.graph_size(Vec2::new(200.0, 50.0))
+			.scale_min(0.1)
+			.scale_max(50.0)
+			.build();
 
 		let coord = self.inner.window_to_canvas(ui.io().mouse_pos.into());
 		if self.nodes.count_nodes(coord) > 0 {
@@ -438,7 +456,7 @@ impl Canvas {
 		let r = self.renderer.as_mut().unwrap();
 
 		// Rajzolás (Wire)
-		r.regenerate_buffers(device, &self.wires, &self.nodes.node_storage, &self.nodes.node_lookup, &self.comps, &self.inner, queue);
+		r.regenerate_buffers(device, Vec2::new(surface_desc.width as f32, surface_desc.height as f32), &self.wires, &self.nodes.node_storage, &self.nodes.node_lookup, &self.comps, &self.inner, queue);
 
 		// Rajzolás (Comp)
 		r.render(rpass, &self.inner, [ surface_desc.width as f32, surface_desc.height as f32 ]);

@@ -21,7 +21,7 @@ var<immediate> imm: Immediates;
 const GS: f32 = 16.0;
 
 fn transform(in: vec2<f32>) -> vec2<f32> {
-	return (((in + vec2<f32>(0.0, 0.5)) * GS + imm.pan) / imm.wsize * 2.0 - 1.0) * imm.zoom;
+	return ((in * GS + imm.pan) / imm.wsize * 2.0 - 1.0) * imm.zoom;
 }
 
 @vertex
@@ -34,10 +34,10 @@ fn vs_main(
 	let rad = 0.5;
 
 	let vertices = array<vec4<f32>, 4>(
-		vec4(transform(in.k + vec2(40.0, 22.0) + vec2(-rad, -rad)), vec2(-1.0, -1.0)),
-		vec4(transform(in.k + vec2(40.0, 22.0) + vec2( rad, -rad)), vec2( 1.0, -1.0)),
-		vec4(transform(in.k + vec2(40.0, 22.0) + vec2(-rad,  rad)), vec2(-1.0,  1.0)),
-		vec4(transform(in.k + vec2(40.0, 22.0) + vec2( rad,  rad)), vec2( 1.0,  1.0)),
+		vec4(transform((in.k + imm.wsize / 2.0 / 16.0) + vec2(-rad, -rad)), vec2(-1.0, -1.0)),
+		vec4(transform((in.k + imm.wsize / 2.0 / 16.0) + vec2( rad, -rad)), vec2( 1.0, -1.0)),
+		vec4(transform((in.k + imm.wsize / 2.0 / 16.0) + vec2(-rad,  rad)), vec2(-1.0,  1.0)),
+		vec4(transform((in.k + imm.wsize / 2.0 / 16.0) + vec2( rad,  rad)), vec2( 1.0,  1.0)),
 	);
 
 	let vert = vec2<f32>(vertices[vidx].x, -vertices[vidx].y);
