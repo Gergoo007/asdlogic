@@ -1,7 +1,7 @@
 use serde::{Deserialize, Serialize};
-use crate::canvas::{Canvas, Vec2, component::CompKind};
+use crate::canvas::{Canvas, ClipboardElement, Vec2, component::CompKind, wires::Wire};
 
-#[derive(Serialize, Deserialize, Clone, Copy, Debug)]
+#[derive(Serialize, Deserialize, Clone, Debug)]
 pub enum Action {
 	AddComp { to: Vec2, kind: CompKind, },
 	DeleteComp { at: Vec2, kind: CompKind },
@@ -10,24 +10,28 @@ pub enum Action {
 	AddWire { from: Vec2, to: Vec2 },
 	DeleteWire { from: Vec2, to: Vec2 },
 	OverwriteWire { oldstart: Vec2, oldend: Vec2, newstart: Vec2, newend: Vec2, },
+	Paste { at: Vec2, clipboard: Vec<ClipboardElement> },
+	UnPaste { at: Vec2, clipboard: Vec<ClipboardElement> },
 }
 
 impl Action {
 	fn reverse(&self) -> Self {
-		match *self {
-			Action::AddComp { to, kind } => Action::DeleteComp { at: to, kind },
-			Action::DeleteComp { at, kind } => Action::AddComp { to: at, kind },
-			Action::MoveComp { from, to } => Action::MoveComp { from: to, to: from },
+		match self {
+			Action::AddComp { to, kind } => Action::DeleteComp { at: to.clone(), kind: kind.clone() },
+			Action::DeleteComp { at, kind } => Action::AddComp { to: at.clone(), kind: kind.clone() },
+			Action::MoveComp { from, to } => Action::MoveComp { from: to.clone(), to: from.clone() },
 			Action::MoveWire { from, to, by } => Action::MoveWire { from: from + by, to: to + by, by: -by },
-			Action::AddWire { from, to } => Action::DeleteWire { from, to },
-			Action::DeleteWire { from, to } => Action::AddWire { from, to },
+			Action::AddWire { from, to } => Action::DeleteWire { from: from.clone(), to: to.clone() },
+			Action::DeleteWire { from, to } => Action::AddWire { from: from.clone(), to: to.clone() },
 			Action::OverwriteWire { oldstart, oldend, newstart, newend } =>
-				Action::OverwriteWire { oldstart: newstart, oldend: newend, newstart: oldstart, newend: oldend, },
+				Action::OverwriteWire { oldstart: newstart.clone(), oldend: newend.clone(), newstart: oldstart.clone(), newend: oldend.clone(), },
+			Action::Paste { at, clipboard } => Action::UnPaste { at: *at, clipboard: clipboard.clone() }, // Action::Copy { clipboard: clipboard.clone() },
+			Action::UnPaste { at, clipboard } => Action::Paste { at: *at, clipboard: clipboard.clone() },
 		}
 	}
 }
 
-#[derive(Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize)]
 struct Timepoint {
 	actions: Vec<Action>,
 }
@@ -70,31 +74,30 @@ impl Canvas {
 		self.history.cursor += 1;
 	}
 
-	pub fn add_and_execute(&mut self, action: Action) {
+	pub fn add_and_execute(&mut self, action: &Action) {
 		assert!(self.history.recording);
-		self.history.records[self.history.cursor].actions.push(action);
-		self.execute_action(action);
+		self.history.records[self.history.cursor].actions.push(action.clone());
+		self.execute_action(&self.history.records[self.history.cursor].actions.last().expect("msg").clone());
 	}
 
-	pub fn record_and_execute(&mut self, action: Action) {
+	pub fn record_and_execute(&mut self, action: &Action) {
 		self.start_record();
 		self.add_and_execute(action);
 		self.end_record();
 	}
 
-	fn execute_action(&mut self, action: Action) {
-		// println!("execute {:?}", action);
+	fn execute_action(&mut self, action: &Action) {
 		match action {
 			Action::AddComp { to, kind } => {
-				self.add_comp(kind, to);
+				self.add_comp(*kind, *to);
 			},
 			Action::AddWire { from, to } => {
-				self.wires.add(from, to, &mut self.nodes);
+				self.wires.add(*from, *to, &mut self.nodes);
 			},
 			Action::DeleteComp { at, kind: _ } => {
 				let mut rem = None;
 				for (cidx, c) in &self.comps {
-					if c.pos == at {
+					if c.pos == *at {
 						rem.replace(cidx);
 						break;
 					}
@@ -105,21 +108,21 @@ impl Canvas {
 			Action::DeleteWire { from, to } => {
 				let mut to_remove = None;
 				for (widx, w) in &self.wires.wires {
-					if w.start == from && w.end == to {
+					if w.start == *from && w.end == *to {
 						w.remove_nodes(&mut self.nodes, widx, &self.wires, &self.comps, &mut self.update_generation);
 						to_remove.replace(widx);
 					}
 				}
-				self.wires.wires.remove(to_remove.unwrap());
+				self.wires.wires.remove(to_remove.expect("Action::DeleteWire: Couldn't find wire to be removed!")).expect("Action::DeleteWire: Wire to be deleted was not found?");
 			},
 			Action::OverwriteWire { oldstart, oldend, newstart, newend, } => {
-				let (widx, _) = self.wires.wires.iter_mut().find(|(_, w)| w.start == oldstart && w.end == oldend).unwrap();
+				let (widx, _) = self.wires.wires.iter_mut().find(|(_, w)| w.start == *oldstart && w.end == *oldend).unwrap();
 				let mut jaj = self.wires.wires[widx].clone();
-				jaj.modify(newstart, newend, &mut self.nodes, widx, &self.wires, &self.comps, &mut self.update_generation);
+				jaj.modify(*newstart, *newend, &mut self.nodes, widx, &self.wires, &self.comps, &mut self.update_generation);
 				self.wires.wires[widx] = jaj;
 			},
 			Action::MoveComp { from, to } => {
-				let r = self.comps.iter_mut().find(|(_, c)| c.pos == from);
+				let r = self.comps.iter_mut().find(|(_, c)| c.pos == *from);
 				if r.is_none() {
 					println!("failed to find c {:?}", from);
 					return;
@@ -130,20 +133,38 @@ impl Canvas {
 				self.comps[cidx] = c2;
 			},
 			Action::MoveWire { from, to, by } => {
-				let r = self.wires.wires.iter().find(|(_, w)| (w.start == from && w.end == to) || (w.end == from && w.start == to));
+				let r = self.wires.wires.iter().find(|(_, w)| (w.start == *from && w.end == *to) || (w.end == *from && w.start == *to));
 				if r.is_none() {
 					println!("failed to find w {:?}", from);
 					return;
 				}
 				let (widx, _) = r.unwrap();
 				let mut w = self.wires.wires[widx].clone();
-				w.move_by(by, widx, &mut self.nodes, &self.wires, &self.comps, &mut self.update_generation);
+				w.move_by(*by, widx, &mut self.nodes, &self.wires, &self.comps, &mut self.update_generation);
 				self.wires.wires[widx] = w;
+			},
+			Action::Paste { at, clipboard } => {
+				for i in 0..clipboard.len() {
+					if let ClipboardElement::Component { kind, pos } = &clipboard[i] {
+						self.add_comp(kind.clone(), at + pos);
+					} else if let ClipboardElement::Wire { start, end } = &clipboard[i] {
+						self.wires.try_add(Wire { start: at + start, end: at + end, startnode: None, endnode: None, selected: false }, &mut self.nodes, &self.comps, &mut self.update_generation);
+					}
+				}
+			},
+			Action::UnPaste { at, clipboard } => {
+				for i in 0..clipboard.len() {
+					if let ClipboardElement::Component { kind, pos } = &clipboard[i] {
+						self.execute_action(&Action::DeleteComp { at: pos + at, kind: *kind });
+					} else if let ClipboardElement::Wire { start, end } = &clipboard[i] {
+						self.execute_action(&Action::DeleteWire { from: at + *start, to: at + *end });
+					}
+				}
 			}
 		}
 	}
 
-	fn revert_action(&mut self, action: Action) { self.execute_action(action.reverse()); }
+	fn revert_action(&mut self, action: &Action) { self.execute_action(&action.reverse()); }
 
 	pub fn undo(&mut self) {
 		if self.history.cursor <= 0 {
@@ -152,8 +173,8 @@ impl Canvas {
 			self.history.cursor -= 1;
 			let asd = &self.history.records[self.history.cursor].actions;
 			for i in (0..asd.len()).rev() {
-				let act = self.history.records[self.history.cursor].actions[i];
-				self.revert_action(act);
+				let act = &self.history.records[self.history.cursor].actions[i];
+				self.revert_action(&act.clone());
 			}
 		}
 	}
@@ -164,8 +185,8 @@ impl Canvas {
 		} else {
 			let asd = &self.history.records[self.history.cursor].actions;
 			for i in 0..asd.len() {
-				let act = self.history.records[self.history.cursor].actions[i];
-				self.execute_action(act);
+				let act = &self.history.records[self.history.cursor].actions[i];
+				self.execute_action(&act.clone());
 			}
 			self.history.cursor += 1;
 		}

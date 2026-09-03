@@ -1,7 +1,7 @@
 use serde::{Deserialize, Serialize};
 use wgpu::ShaderModuleDescriptor;
 
-use crate::{canvas::{ElemIndex, Immediates, Vec2}, config};
+use crate::{canvas::{ElemIndex, Vec2}, config};
 
 #[derive(Serialize, Deserialize)]
 pub struct CanvasInner {
@@ -19,13 +19,23 @@ pub struct CanvasInner {
 	pub wire_draw_cancelled: bool,
 }
 
+#[repr(C)]
+#[derive(Clone, Copy, bytemuck::Pod, bytemuck::Zeroable)]
+struct BackgroundImmediates {
+	start: [f32; 2],
+	step: [f32; 2],
+	num_cols: u32,
+	zoom: f32,
+	nth: u32,
+}
+
 impl CanvasInner {
 	pub fn create_pipeline(&mut self, device: &wgpu::Device, surface_desc: &wgpu::SurfaceConfiguration) {
 		let pipeline_layout =
 			device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
 				label: Some("Render Pipeline Layout"),
 				bind_group_layouts: &[],
-				immediate_size: size_of::<Immediates>() as u32,
+				immediate_size: size_of::<BackgroundImmediates>() as u32,
 			});
 
 		let shader = device.create_shader_module(ShaderModuleDescriptor {
@@ -53,7 +63,7 @@ impl CanvasInner {
 				compilation_options: wgpu::PipelineCompilationOptions::default(),
 			}),
 			primitive: wgpu::PrimitiveState {
-				topology: wgpu::PrimitiveTopology::TriangleList,
+				topology: wgpu::PrimitiveTopology::TriangleStrip,
 				strip_index_format: None,
 				front_face: wgpu::FrontFace::Ccw,
 				cull_mode: Some(wgpu::Face::Back),
@@ -128,11 +138,18 @@ impl CanvasInner {
 	}
 
 	pub fn draw_grid(&self, rpass: &mut wgpu::RenderPass) {
-		if self.zoom < 0.35 { return; }
-
 		let center = self.size / 2.0;
 
-		let gsz = config::GRID_SPACING * self.zoom;
+		let mut nth = 1;
+		let mut zoom2 = self.zoom;
+		while zoom2 < 1.0 {
+			nth *= 2;
+			zoom2 *= 2.0;
+		}
+
+		// let nth = 2f32.powf(-self.zoom.log2()) as u32;
+
+		let gsz = config::GRID_SPACING * nth as f32 * self.zoom;
 
 		let mut remainder = (((center / gsz) - (center / gsz).floor()) * gsz
 							+ ((self.pan * self.zoom) % gsz) + gsz) % gsz;
@@ -140,21 +157,21 @@ impl CanvasInner {
 		// Normalizálás: Ablakkoordináták -> NDC
 		remainder = 2.0 * remainder / self.size - 1.0;
 		remainder.y = -remainder.y;
-		let step = gsz * 2.0 / self.size;
 
 		let num_cols = (self.size.x / gsz) as u32 + 1;
 
-		let turip = Immediates {
+		let turip = BackgroundImmediates {
 			start: remainder.into(),
-			step: step.into(),
+			step: self.size.into(),
 			num_cols,
 			zoom: self.zoom,
+			nth,
 		};
 
 		rpass.set_pipeline(self.pipeline.as_ref().unwrap());
 		rpass.set_immediates(0, bytemuck::bytes_of(&turip));
 		let cols = self.size.x / gsz + 1.0;
 		let rows = self.size.y / gsz + 1.0;
-		rpass.draw(0..6, 0..(cols*rows) as u32);
+		rpass.draw(0..4, 0..(cols*rows) as u32);
 	}
 }

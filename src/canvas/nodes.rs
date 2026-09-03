@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 
 use glam::IVec2;
-use imgui::Key;
+use imgui::{Key, MouseButton};
 use serde::{Deserialize, Serialize};
 
 use crate::{canvas::{CompStorage, ElemIndex, Vec2, inner::CanvasInner, logic::LL, vec2int, wires::{Wire, Wires}}, config};
@@ -21,7 +21,7 @@ pub struct Node {
 
 impl Node {
 	pub fn process(&self, nodeid: NodeKey, inner: &mut CanvasInner, ui: &imgui::Ui)
-	-> (Option<Wire>, Option<Wire>) {
+	-> (Option<Wire>, Option<Wire>, bool) {
 		let offset = config::NODE_HITBOX / 2.0;
 
 		ui.set_cursor_pos(inner.canvas_to_window(self.pos - offset));
@@ -33,6 +33,11 @@ impl Node {
 
 		let active = ui.is_item_active();
 		let deactivated = ui.is_item_deactivated();
+		let rightclick = ui.is_item_hovered() && ui.is_mouse_released(MouseButton::Right);
+
+		if rightclick {
+			return (None, None, true);
+		}
 
 		if active {
 			ui.get_window_draw_list().add_rect(inner.canvas_to_window(self.pos - offset), inner.canvas_to_window(self.pos - offset) + inner.canvas_to_window_size(self.pos - offset, config::NODE_HITBOX), 0xffffffff)
@@ -84,7 +89,7 @@ impl Node {
 			if w2.start != w2.end && !inner.wire_draw_cancelled { ret.1.replace(w2); }
 			inner.wire_draw_cancelled = false;
 		}
-		return ret;
+		return (ret.0, ret.1, false);
 	}
 }
 
