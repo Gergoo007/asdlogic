@@ -1,7 +1,7 @@
-use std::{f32::consts::PI, fmt::Debug, thread::{self, JoinHandle}, assert_matches};
+use std::{f32::consts::PI, fmt::Debug, thread::{self, JoinHandle}};
 
 use glam::IVec2;
-use imgui::{MouseButton, Key};
+use imgui::{Key::{self}, MouseButton};
 use rmp_serde::Serializer;
 use serde::{Deserialize, Serialize};
 use strum::{EnumMessage, IntoEnumIterator};
@@ -407,6 +407,25 @@ impl Canvas {
 			.scale_max(50.0)
 			.build();
 
+		// Jobboldali vágólap-debugger
+		let size: Vec2 = ui.window_size().into();
+		ui.window("History")
+			.size(Vec2::new(300.0, 300.0), imgui::Condition::Always)
+			.position(Vec2::new(size.x - 300.0, 0.0), imgui::Condition::Always)
+			.no_decoration()
+			.build(|| {
+				for (idx, tp) in self.history.records.iter().enumerate() {
+					ui.tree_node_config(format!("{}TP #{}", if self.history.cursor > 0 && idx == self.history.cursor - 1 { "->" } else { "" }, idx))
+					.default_open(true)
+					.build(|| {
+						for action in &tp.actions {
+							let str: &'static str = action.into();
+							ui.bullet_text(format!("{}", str));
+						}
+					});
+				}
+			});
+
 		let coord = self.inner.window_to_canvas(ui.io().mouse_pos.into());
 		if self.nodes.count_nodes(coord) > 0 {
 			ui.text(format!("{:?} is driven: {}", coord, check_driven(&self.nodes.node_lookup, &mut self.nodes.node_storage, &self.wires, &self.comps, coord, &mut self.update_generation, true)));
@@ -527,11 +546,16 @@ impl Canvas {
 		let mut id = 0;
 		let wkeys: Vec<_> = self.wires.wires.iter().map(|(idx, _)| idx).collect();
 		for wi in &wkeys {
-			self.wires.wires[*wi].process(&self.inner, ui, Some(id));
+			// if !self.wires.wires.contains(*wi) {
+			// 	continue;
+			// }
+
+			let wire = &self.wires.wires[*wi];
+			wire.process(&self.inner, ui, Some(id));
 
 			if ui.is_item_active() {
 				if self.inner.grab_mouse_offset.is_none() {
-					self.inner.grab_mouse_offset.replace((ElemIndex::Wire(*wi), self.inner.canvas_to_window(self.wires.wires[*wi].start) - Vec2::from(ui.io().mouse_pos)));
+					self.inner.grab_mouse_offset.replace((ElemIndex::Wire(*wi), self.inner.canvas_to_window(wire.start) - Vec2::from(ui.io().mouse_pos)));
 				}
 			} else {
 				if let Some(turi) = self.inner.grab_mouse_offset {
@@ -544,17 +568,26 @@ impl Canvas {
 			if ui.is_item_hovered() {
 				if ui.is_mouse_clicked(MouseButton::Left) {
 					// Ha a jelenleg hoverelt item is ki van már jelölve, akkor ne deszelektáljunk
-					if !self.wires.wires[*wi].selected {
+					if !wire.selected {
 						if ui.is_key_down(Key::LeftShift) {
 							self.select(None);
 							self.select(Some(ElemIndex::Wire(*wi)));
 						} else {
-							let mut w2 = self.wires.wires[*wi].clone();
-							let w3 = w2.split(self.inner.window_to_canvas(ui.io().mouse_pos.into()), &mut self.nodes, *wi, &self.wires, &self.comps, &mut self.update_generation);
-							self.wires.wires[*wi] = w2;
-							self.wires.add(w3.start, w3.end, &mut self.nodes);
+							self.split(*wi, self.inner.window_to_canvas(ui.io().mouse_pos.into()));
 						}
 					}
+				} else if ui.is_mouse_clicked(MouseButton::Middle) {
+					self.selection.retain(|e| {
+						if let ElemIndex::Wire(w) = e {
+							if self.wires.wires[*w].start == wire.start && self.wires.wires[*w].end == wire.end {
+								return false;
+							}
+						}
+
+						return true;
+					});
+
+					self.record_and_execute(&Action::DeleteWire { from: wire.start, to: wire.end });
 				}
 			}
 

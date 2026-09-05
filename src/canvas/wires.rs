@@ -1,6 +1,6 @@
 use serde::{Deserialize, Serialize};
 
-use crate::{canvas::{CanvasInner, CompStorage, ElemIndex, NodeHandler, Vec2, nodes::{Node, NodeKey}}, config};
+use crate::{canvas::{Canvas, CanvasInner, CompStorage, ElemIndex, NodeHandler, Vec2, history::{Action}, nodes::{Node, NodeKey}}, config};
 
 pub type WireStorage = typed_generational_arena::StandardArena<Wire>;
 pub type WireKey = typed_generational_arena::StandardIndex<Wire>;
@@ -38,7 +38,6 @@ impl Wire {
 
 	pub fn process(&self, canvas: &CanvasInner, ui: &imgui::Ui, id: Option<u32>) {
 		if let Some(id) = id {
-			ui.set_cursor_pos(canvas.canvas_to_window((self.start + self.end - 1.2 / canvas.zoom) / 2.0));
 			if canvas.debug {
 				ui.text(format!("w{}", id));
 			}
@@ -69,31 +68,7 @@ impl Wire {
 			.thickness(config::WIRE_THICKNESS * canvas.zoom)
 			.build();
 
-		if let Some(id) = id {
-			ui.set_cursor_pos(canvas.canvas_to_window((self.start + self.end - 1.2 / canvas.zoom) / 2.0));
-			if canvas.debug {
-				ui.text(format!("w{}", id));
-			}
-
-			let s = Vec2::new(self.start.x.min(self.end.x), self.start.y.min(self.end.y));
-			let e = Vec2::new(self.start.x.max(self.end.x), self.start.y.max(self.end.y));
-
-			let mut size = canvas.canvas_to_window_size(s, e - s);
-			let mut pos = canvas.canvas_to_window(s);
-			let btnsize = config::WIRE_HITBOX_WIDTH * canvas.zoom;
-			if size.x == 0.0 {
-				size.x = btnsize;
-				pos.x -= btnsize / 2.0;
-			} else if size.y == 0.0 {
-				size.y = btnsize;
-				pos.y -= btnsize / 2.0;
-			} else {
-				unreachable!("Diagonal wires not supported yet!");
-			}
-
-			ui.set_cursor_pos(pos);
-			ui.invisible_button(format!("wire{}", id), size);
-		}
+		self.process(canvas, ui, id);
 	}
 
 	pub fn touches(&self, p: Vec2) -> bool {
@@ -278,5 +253,31 @@ impl Wires {
 		if insert {
 			self.add(new.start, new.end, nodes);
 		}
+	}
+
+	fn delete_with_key(&mut self, key: WireKey, nodes: &mut NodeHandler, comps: &CompStorage, update_generation: &mut u32) {
+		self.wires[key].remove_nodes(nodes, key, self, comps, update_generation);
+		self.wires.remove(key).expect("Action::DeleteWire: Wire to be deleted was not found?");
+	}
+
+	pub fn delete(&mut self, from: Vec2, to: Vec2, nodes: &mut NodeHandler, comps: &CompStorage, update_generation: &mut u32) {
+		let mut to_remove = None;
+		for (widx, w) in &self.wires {
+			if w.start == from && w.end == to {
+				assert!(to_remove.is_none());
+				to_remove.replace(widx);
+			}
+		}
+		self.delete_with_key(to_remove.expect("Action::DeleteWire: Couldn't find wire to be removed!"), nodes, comps, update_generation);
+	}
+}
+
+impl Canvas {
+	pub fn split(&mut self, wi: WireKey, at: Vec2) {
+		self.start_record();
+		let oldend = self.wires.wires[wi].end;
+		self.add_and_execute(&Action::OverwriteWire { oldstart: self.wires.wires[wi].start, oldend: self.wires.wires[wi].end, newstart: self.wires.wires[wi].start, newend: at });
+		self.add_and_execute(&Action::AddWire { from: at, to: oldend });
+		self.end_record();
 	}
 }

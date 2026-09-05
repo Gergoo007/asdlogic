@@ -1,7 +1,7 @@
 use serde::{Deserialize, Serialize};
-use crate::canvas::{Canvas, ClipboardElement, Vec2, component::CompKind, wires::Wire};
+use crate::canvas::{Canvas, ClipboardElement, Vec2, component::CompKind, wires::{Wire}};
 
-#[derive(Serialize, Deserialize, Clone, Debug)]
+#[derive(strum::IntoStaticStr, Serialize, Deserialize, Clone, Debug)]
 pub enum Action {
 	AddComp { to: Vec2, kind: CompKind, },
 	DeleteComp { at: Vec2, kind: CompKind },
@@ -25,15 +25,15 @@ impl Action {
 			Action::DeleteWire { from, to } => Action::AddWire { from: from.clone(), to: to.clone() },
 			Action::OverwriteWire { oldstart, oldend, newstart, newend } =>
 				Action::OverwriteWire { oldstart: newstart.clone(), oldend: newend.clone(), newstart: oldstart.clone(), newend: oldend.clone(), },
-			Action::Paste { at, clipboard } => Action::UnPaste { at: *at, clipboard: clipboard.clone() }, // Action::Copy { clipboard: clipboard.clone() },
+			Action::Paste { at, clipboard } => Action::UnPaste { at: *at, clipboard: clipboard.clone() },
 			Action::UnPaste { at, clipboard } => Action::Paste { at: *at, clipboard: clipboard.clone() },
 		}
 	}
 }
 
 #[derive(Debug, Serialize, Deserialize)]
-struct Timepoint {
-	actions: Vec<Action>,
+pub struct Timepoint {
+	pub actions: Vec<Action>,
 }
 
 impl Timepoint {
@@ -46,8 +46,8 @@ impl Timepoint {
 
 #[derive(Serialize, Deserialize)]
 pub struct History {
-	    records: Vec<Timepoint>,
-	    cursor: usize,
+	pub records: Vec<Timepoint>,
+	pub cursor: usize,
 	pub recording: bool,
 }
 
@@ -65,6 +65,7 @@ impl Canvas {
 	pub fn start_record(&mut self) {
 		assert!(!self.history.recording);
 		self.history.recording = true;
+		self.history.records.resize_with(self.history.cursor, || Timepoint::new());
 		self.history.records.resize_with(self.history.cursor + 1, || Timepoint::new());
 	}
 
@@ -106,14 +107,7 @@ impl Canvas {
 				t.remove_nodes(&mut self.nodes, rem.unwrap(), &self.wires, &self.comps, &mut self.update_generation);
 			},
 			Action::DeleteWire { from, to } => {
-				let mut to_remove = None;
-				for (widx, w) in &self.wires.wires {
-					if w.start == *from && w.end == *to {
-						w.remove_nodes(&mut self.nodes, widx, &self.wires, &self.comps, &mut self.update_generation);
-						to_remove.replace(widx);
-					}
-				}
-				self.wires.wires.remove(to_remove.expect("Action::DeleteWire: Couldn't find wire to be removed!")).expect("Action::DeleteWire: Wire to be deleted was not found?");
+				self.wires.delete(*from, *to, &mut self.nodes, &self.comps, &mut self.update_generation);
 			},
 			Action::OverwriteWire { oldstart, oldend, newstart, newend, } => {
 				let (widx, _) = self.wires.wires.iter_mut().find(|(_, w)| w.start == *oldstart && w.end == *oldend).unwrap();
